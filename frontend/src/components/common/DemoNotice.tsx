@@ -13,7 +13,7 @@ export function DemoNotice({
   return (
     <div
       className={cn(
-        "flex items-start gap-2.5 rounded-lg border border-amber-300/70 bg-amber-50 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-200",
+        "flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning",
         className,
       )}
     >

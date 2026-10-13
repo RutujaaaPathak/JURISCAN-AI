@@ -2,7 +2,7 @@ import { Link } from "react-router-dom"
 
 export function Footer() {
   return (
-    <footer className="border-t border-border">
+    <footer className="border-t border-border/70 bg-muted/20">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <span>&copy; {new Date().getFullYear()} JurisScan-AI</span>
         <nav className="flex items-center gap-4">

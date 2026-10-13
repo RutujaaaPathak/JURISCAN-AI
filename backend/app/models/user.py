@@ -21,11 +21,13 @@ class User(Base, TimestampMixin):
     )
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Company accounts store their organisation name here; null for other roles.
+    organization_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # Workspace role. Authorization is enforced server-side against this value,
-    # but note that no authentication exists yet: every request resolves to the
-    # single default workspace user (see app/api/deps.py). This column is the
-    # foundation the auth layer will populate later.
+    # Workspace role. Authorization is enforced server-side against this value.
+    # It is set from the authenticated account (see app/api/deps.py); outside
+    # production an unauthenticated request still falls back to a shared demo
+    # user for backwards compatibility.
     role: Mapped[str] = mapped_column(
         String(16), default="individual", server_default="individual", nullable=False
     )

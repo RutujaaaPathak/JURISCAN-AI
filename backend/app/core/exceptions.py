@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -34,6 +35,11 @@ class NotFoundError(AppError):
 class ConflictError(AppError):
     def __init__(self, message: str, *, code: str = "conflict", details: Any = None) -> None:
         super().__init__(message, code=code, status_code=409, details=details)
+
+
+class UnauthorizedError(AppError):
+    def __init__(self, message: str, *, code: str = "unauthorized", details: Any = None) -> None:
+        super().__init__(message, code=code, status_code=401, details=details)
 
 
 class ForbiddenError(AppError):
@@ -70,7 +76,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=_error_body(
                 "validation_error",
                 "Request validation failed.",
-                details=exc.errors(),
+                details=jsonable_encoder(exc.errors()),
             ),
         )
 
@@ -97,6 +103,7 @@ __all__ = [
     "AppError",
     "NotFoundError",
     "ConflictError",
+    "UnauthorizedError",
     "ForbiddenError",
     "ValidationFailed",
     "register_exception_handlers",

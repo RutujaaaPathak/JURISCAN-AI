@@ -4,6 +4,8 @@ import type { ReactNode } from "react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatDateTime } from "@/lib/format"
+import type { Tone } from "@/lib/tones"
+import { TONE_SURFACE } from "@/lib/tones"
 import { cn } from "@/lib/utils"
 
 export interface ActivityItem {
@@ -12,14 +14,7 @@ export interface ActivityItem {
   description?: string
   timestamp: string
   icon: LucideIcon
-  tone?: "default" | "success" | "warning" | "destructive"
-}
-
-const toneClasses: Record<NonNullable<ActivityItem["tone"]>, string> = {
-  default: "bg-muted text-foreground",
-  success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  warning: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-  destructive: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+  tone?: Tone
 }
 
 export function ActivityFeed({ items, empty }: { items: ActivityItem[]; empty?: ReactNode }) {
@@ -47,7 +42,7 @@ export function ActivityFeed({ items, empty }: { items: ActivityItem[]; empty?: 
                   <span
                     className={cn(
                       "flex size-8 shrink-0 items-center justify-center rounded-full",
-                      toneClasses[item.tone ?? "default"],
+                      TONE_SURFACE[item.tone ?? "default"],
                     )}
                   >
                     <Icon className="size-4" aria-hidden="true" />

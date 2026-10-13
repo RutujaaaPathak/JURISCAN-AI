@@ -18,6 +18,7 @@ import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/common/Sta
 import { QuickActions } from "@/components/dashboard/QuickActions"
 import type { QuickAction } from "@/components/dashboard/QuickActions"
 import { StatCard } from "@/components/dashboard/StatCard"
+import { PageHeader } from "@/components/layout/PageHeader"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -170,21 +171,18 @@ export function LawyerDashboardPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Lawyer workspace</h1>
-          <p className="text-sm text-muted-foreground">
-            {ROLE_META[role].label} workspace · Triage available matters and manage the cases
-            assigned to you.
-          </p>
-        </div>
-        <Button asChild>
-          <Link to="/dashboard/available-cases">
-            <Inbox className="size-4" aria-hidden="true" />
-            Browse cases
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Lawyer workspace"
+        description={`${ROLE_META[role].label} workspace · Triage available matters and manage the cases assigned to you.`}
+        actions={
+          <Button asChild>
+            <Link to="/dashboard/available-cases">
+              <Inbox className="size-4" aria-hidden="true" />
+              Browse cases
+            </Link>
+          </Button>
+        }
+      />
 
       <Alert variant="info">
         <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

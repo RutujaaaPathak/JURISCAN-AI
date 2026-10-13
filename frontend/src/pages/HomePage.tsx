@@ -1,22 +1,17 @@
 import {
-  Building2,
   Database,
   FileSearch,
   FileText,
-  Gavel,
   ScanLine,
   ShieldCheck,
   Sparkles,
-  User,
 } from "lucide-react"
-import { Link, useNavigate } from "react-router-dom"
+import { Link } from "react-router-dom"
 
 import { ConnectionStatus } from "@/components/layout/ConnectionStatus"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useRole } from "@/context/RoleContext"
-import type { UserRole } from "@/lib/roles"
 
 const features = [
   {
@@ -52,68 +47,27 @@ const steps = [
 ]
 
 export function HomePage() {
-  const navigate = useNavigate()
-  const { setRole } = useRole()
-
-  const openDashboard = (role: UserRole) => {
-    setRole(role)
-    navigate("/dashboard")
-  }
-
   return (
     <div className="flex flex-col">
-      <section className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-20 text-center sm:px-6 sm:py-28">
-        <Badge variant="secondary" className="gap-1.5">
+      <section className="bg-app-sheen mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-20 text-center sm:px-6 sm:py-28">
+        <Badge variant="secondary" className="gap-1.5 border border-primary/15 bg-primary/10 text-primary">
           <Sparkles className="size-3.5" aria-hidden="true" />
           AI-powered contract review
         </Badge>
-        <h1 className="mt-6 max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
+        <h1 className="text-balance mt-6 max-w-3xl text-4xl font-semibold tracking-tight sm:text-6xl">
           Audit legal documents with confidence
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
           JurisScan-AI turns dense contracts into structured clauses and reviewable risk findings —
           with explanations, severity and citations you can act on.
         </p>
-        <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
-          <Button
-            variant="outline"
-            size="lg"
-            className="justify-center"
-            onClick={() => openDashboard("individual")}
-          >
-            <User className="size-4" aria-hidden="true" />
-            User Dashboard
-          </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            className="justify-center"
-            onClick={() => openDashboard("company")}
-          >
-            <Building2 className="size-4" aria-hidden="true" />
-            Company Dashboard
-          </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            className="justify-center"
-            onClick={() => openDashboard("lawyer")}
-          >
-            <Gavel className="size-4" aria-hidden="true" />
-            Lawyer Dashboard
-          </Button>
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Preview modes for the shared workspace — sign-in and role-based access are not implemented
-          yet.
-        </p>
-        <div className="mt-6">
+        <div className="mt-8">
           <Button asChild variant="ghost" size="lg">
             <a href="#features">Explore features</a>
           </Button>
         </div>
 
-        <div className="mt-10 flex flex-col items-center gap-2 rounded-lg border border-border bg-muted/40 px-5 py-4 sm:flex-row sm:gap-4">
+        <div className="mt-10 flex flex-col items-center gap-2 rounded-xl border border-border/70 bg-card px-5 py-4 shadow-xs sm:flex-row sm:gap-4">
           <span className="text-sm font-medium">Backend status</span>
           <ConnectionStatus />
         </div>
@@ -171,9 +125,9 @@ export function HomePage() {
         </div>
       </section>
 
-      <section className="border-t border-border bg-primary text-primary-foreground">
+      <section className="border-t border-border bg-linear-to-br from-primary to-[color-mix(in_oklch,var(--primary),var(--chart-2)_60%)] text-primary-foreground">
         <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-6 px-4 py-16 text-center sm:px-6">
-          <h2 className="text-3xl font-semibold tracking-tight">Foundation is in place</h2>
+          <h2 className="text-balance text-3xl font-semibold tracking-tight">Foundation is in place</h2>
           <p className="max-w-xl opacity-90">
             Frontend routing, backend API, PostgreSQL schema and migrations are ready. Document
             processing and the Legal-BERT analysis pipeline come next.

@@ -3,7 +3,6 @@ import {
   ArrowRight,
   Bell,
   Briefcase,
-  Building2,
   CalendarClock,
   ClipboardList,
   Database,
@@ -27,6 +26,7 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed"
 import { QuickActions } from "@/components/dashboard/QuickActions"
 import type { QuickAction } from "@/components/dashboard/QuickActions"
 import { StatCard } from "@/components/dashboard/StatCard"
+import { PageHeader } from "@/components/layout/PageHeader"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -53,6 +53,7 @@ import { ROLE_META } from "@/lib/roles"
 import type { DocumentSummary, NotificationItem, OverviewStats } from "@/lib/types"
 import { CompanyDashboardPage } from "@/pages/CompanyDashboardPage"
 import { LawyerDashboardPage } from "@/pages/LawyerDashboardPage"
+import { AdminDashboardPage } from "@/pages/AdminDashboardPage"
 
 const QUICK_ACTIONS: QuickAction[] = [
   { label: "Upload Document", description: "Add a contract to review", icon: Upload, to: "/dashboard/upload" },
@@ -516,7 +517,7 @@ function SystemStatus() {
 }
 
 function IndividualDashboard() {
-  const { role, setRole } = useRole()
+  const { role } = useRole()
   const statsLoader = useCallback(() => getOverviewStats(), [])
   const docsLoader = useCallback(() => listDocuments({ limit: 8 }), [])
   const { state: stats, refresh: refreshStats } = useAsync(statsLoader)
@@ -536,31 +537,18 @@ function IndividualDashboard() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            {ROLE_META[role].label} workspace · Portfolio health across contracts, clauses and
-            detected risk.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => setRole("company")}
-            title="Preview the Company Dashboard (UI preview only — does not change permissions)"
-          >
-            <Building2 className="size-4" aria-hidden="true" />
-            Company Dashboard
-          </Button>
+      <PageHeader
+        title="Dashboard"
+        description={`${ROLE_META[role].label} workspace · Portfolio health across contracts, clauses and detected risk.`}
+        actions={
           <Button asChild>
             <Link to="/dashboard/upload">
               <Upload className="size-4" aria-hidden="true" />
               Upload document
             </Link>
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       <ClientLegalActivity />
 
@@ -607,11 +595,10 @@ function IndividualDashboard() {
 }
 
 /**
- * The `/dashboard` index renders the overview for the active workspace role
- * preview. Company users get the company overview, lawyers get the lawyer
- * caseload overview, and every other role keeps the individual workspace
- * overview. This mirrors navigation shaping and is not an access-control
- * boundary.
+ * The `/dashboard` index renders the overview for the authenticated user's
+ * workspace role. Company users get the company overview, lawyers the caseload
+ * overview, administrators the platform overview, and individuals the default
+ * document workspace.
  */
 export function DashboardPage() {
   const { role } = useRole()
@@ -620,6 +607,9 @@ export function DashboardPage() {
   }
   if (role === "lawyer") {
     return <LawyerDashboardPage />
+  }
+  if (role === "admin") {
+    return <AdminDashboardPage />
   }
   return <IndividualDashboard />
 }

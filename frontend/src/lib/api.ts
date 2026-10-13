@@ -4,20 +4,36 @@ const RAW_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined
 
 export const API_BASE_URL = (RAW_BASE_URL ?? "http://localhost:8000/api").replace(/\/$/, "")
 
-/**
- * Development-only workspace-role preview. Authentication does not exist yet,
- * so the backend exposes a dev-gated `X-Developer-Role` header (ignored in
- * production) that lets the single demo account exercise role-specific
- * endpoints. This is NOT security and grants no real access.
- */
-let developerRole: string | null = null
+const AUTH_TOKEN_KEY = "juriscan-auth-token"
 
-export function setDeveloperRole(role: string | null) {
-  developerRole = role
+function readStoredToken(): string | null {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage.getItem(AUTH_TOKEN_KEY) : null
+  } catch {
+    return null
+  }
 }
 
-function devRoleHeaders(): Record<string, string> {
-  return developerRole ? { "X-Developer-Role": developerRole } : {}
+let authToken: string | null = readStoredToken()
+
+export function getAuthToken(): string | null {
+  return authToken
+}
+
+/** Persist (or clear) the session token used on every subsequent API request. */
+export function setAuthToken(token: string | null) {
+  authToken = token
+  try {
+    if (typeof localStorage === "undefined") return
+    if (token) localStorage.setItem(AUTH_TOKEN_KEY, token)
+    else localStorage.removeItem(AUTH_TOKEN_KEY)
+  } catch {
+    /* localStorage can be unavailable (e.g. private mode); keep the in-memory token */
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {}
 }
 
 export class ApiError extends Error {
@@ -43,7 +59,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(url, {
       headers: {
         Accept: "application/json",
-        ...devRoleHeaders(),
+        ...authHeaders(),
         ...(init?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
         ...init?.headers,
       },
@@ -90,8 +106,8 @@ function uploadRequest<T>(path: string, formData: FormData, init?: UploadOptions
     const xhr = new XMLHttpRequest()
     xhr.open(rest.method ?? "POST", url, true)
     xhr.setRequestHeader("Accept", "application/json")
-    if (developerRole) {
-      xhr.setRequestHeader("X-Developer-Role", developerRole)
+    if (authToken) {
+      xhr.setRequestHeader("Authorization", `Bearer ${authToken}`)
     }
 
     xhr.upload.onprogress = (event) => {
