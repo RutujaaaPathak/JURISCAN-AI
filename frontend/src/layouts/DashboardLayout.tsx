@@ -14,7 +14,7 @@ export function DashboardLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { role } = useRole()
   const { pathname } = useLocation()
-  const title = findNavItemLabel(pathname)
+  const title = findNavItemLabel(pathname, role)
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">

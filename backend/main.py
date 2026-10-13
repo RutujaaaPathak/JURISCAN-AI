@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.cases import router as cases_router
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
+from app.api.lawyers import router as lawyers_router
 from app.api.status import router as status_router
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -34,6 +36,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix=settings.api_prefix)
     app.include_router(status_router, prefix=settings.api_prefix)
     app.include_router(documents_router, prefix=settings.api_prefix)
+    app.include_router(cases_router, prefix=settings.api_prefix)
+    app.include_router(lawyers_router, prefix=settings.api_prefix)
 
     return app
 
