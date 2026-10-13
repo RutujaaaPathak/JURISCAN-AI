@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 25
     log_level: str = "INFO"
 
+    # Auth-layer session signing. The default key is development-only and must be
+    # overridden via SECRET_KEY before any production deployment.
+    secret_key: str = "dev-insecure-secret-change-me"
+    access_token_ttl_seconds: int = 60 * 60 * 24 * 7
+
     # OCR (scanned/image-only PDF pages). Requires the optional
     # ``rapidocr-onnxruntime`` and ``pymupdf`` packages; when they are not
     # installed OCR is skipped and scanned documents fail with a clear error.

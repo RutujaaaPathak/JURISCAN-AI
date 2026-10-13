@@ -1,13 +1,12 @@
 import { NavLink } from "react-router-dom"
 
-import { Select } from "@/components/ui/select"
 import { useRole } from "@/context/RoleContext"
 import { navigationForRole } from "@/lib/navigation"
-import { ROLE_META, USER_ROLES, isUserRole } from "@/lib/roles"
+import { ROLE_META } from "@/lib/roles"
 import { cn } from "@/lib/utils"
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { role, setRole } = useRole()
+  const { role } = useRole()
   const sections = navigationForRole(role)
 
   return (
@@ -60,31 +59,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       ))}
 
-      <div className="mt-auto flex flex-col gap-2 rounded-xl border border-sidebar-border bg-sidebar-accent/40 px-3 py-2.5">
+      <div className="mt-auto flex flex-col gap-1.5 rounded-xl border border-sidebar-border bg-sidebar-accent/40 px-3 py-2.5">
         <p className="text-[11px] font-semibold tracking-wider text-muted-foreground/70 uppercase">
           Workspace
         </p>
-        <Select
-          aria-label="Preview workspace"
-          value={role}
-          onChange={(event) => {
-            const next = event.target.value
-            if (isUserRole(next)) {
-              setRole(next)
-            }
-          }}
-        >
-          {USER_ROLES.map((value) => (
-            <option key={value} value={value}>
-              {ROLE_META[value].label}
-            </option>
-          ))}
-        </Select>
+        <p className="text-sm font-medium">{ROLE_META[role].label}</p>
         <p className="text-xs text-muted-foreground">{ROLE_META[role].description}</p>
-        <p className="text-[10px] leading-snug text-muted-foreground">
-          UI preview only — switches navigation to preview each workspace. Not sign-in and does not
-          grant access to any data.
-        </p>
       </div>
     </nav>
   )

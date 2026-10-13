@@ -53,6 +53,7 @@ import { ROLE_META } from "@/lib/roles"
 import type { DocumentSummary, NotificationItem, OverviewStats } from "@/lib/types"
 import { CompanyDashboardPage } from "@/pages/CompanyDashboardPage"
 import { LawyerDashboardPage } from "@/pages/LawyerDashboardPage"
+import { AdminDashboardPage } from "@/pages/AdminDashboardPage"
 
 const QUICK_ACTIONS: QuickAction[] = [
   { label: "Upload Document", description: "Add a contract to review", icon: Upload, to: "/dashboard/upload" },
@@ -585,11 +586,10 @@ function IndividualDashboard() {
 }
 
 /**
- * The `/dashboard` index renders the overview for the active workspace role
- * preview. Company users get the company overview, lawyers get the lawyer
- * caseload overview, and every other role keeps the individual workspace
- * overview. This mirrors navigation shaping and is not an access-control
- * boundary.
+ * The `/dashboard` index renders the overview for the authenticated user's
+ * workspace role. Company users get the company overview, lawyers the caseload
+ * overview, administrators the platform overview, and individuals the default
+ * document workspace.
  */
 export function DashboardPage() {
   const { role } = useRole()
@@ -598,6 +598,9 @@ export function DashboardPage() {
   }
   if (role === "lawyer") {
     return <LawyerDashboardPage />
+  }
+  if (role === "admin") {
+    return <AdminDashboardPage />
   }
   return <IndividualDashboard />
 }
