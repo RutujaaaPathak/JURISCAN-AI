@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ApiError } from "@/lib/api"
 import { isPublicRole, useAuth } from "@/lib/auth"
 import type { RegisterPayload } from "@/lib/auth"
-import { ROLE_META } from "@/lib/roles"
+import { ROLE_META, dashboardPathForRole } from "@/lib/roles"
 
 interface FormState {
   full_name: string
@@ -115,8 +115,8 @@ export function RegisterPage() {
     setBusy(true)
     setError(null)
     try {
-      await register(payload)
-      navigate("/dashboard", { replace: true })
+      const created = await register(payload)
+      navigate(dashboardPathForRole(created.role), { replace: true })
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Could not create your account.")
     } finally {
@@ -142,7 +142,7 @@ export function RegisterPage() {
         </>
       }
     >
-      <Card>
+      <Card className="surface-panel rounded-2xl border border-white/10 shadow-2xl backdrop-blur-xl">
         <CardContent className="pt-6">
           <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
             {error ? (
@@ -291,7 +291,7 @@ export function RegisterPage() {
               </div>
             ) : null}
 
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy} className="btn-gold-primary h-11 w-full font-semibold mt-2">
               {busy ? "Creating account…" : "Create account"}
             </Button>
           </form>

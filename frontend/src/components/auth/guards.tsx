@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom"
 
 import { Spinner } from "@/components/ui/spinner"
 import { useAuth } from "@/lib/auth"
+import { dashboardPathForRole } from "@/lib/roles"
 import type { UserRole } from "@/lib/roles"
 
 function FullPageLoader() {
@@ -30,13 +31,13 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
 /** Keeps signed-in users out of the login/sign-up pages. */
 export function RedirectIfAuthenticated({ children }: { children: ReactNode }) {
-  const { status } = useAuth()
+  const { status, user } = useAuth()
 
   if (status === "loading") {
     return <FullPageLoader />
   }
-  if (status === "authenticated") {
-    return <Navigate to="/dashboard" replace />
+  if (status === "authenticated" && user) {
+    return <Navigate to={dashboardPathForRole(user.role)} replace />
   }
   return <>{children}</>
 }
@@ -53,7 +54,7 @@ export function RequireRole({ roles, children }: { roles: UserRole[]; children: 
     return <Navigate to="/login" replace />
   }
   if (!roles.includes(user.role)) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={dashboardPathForRole(user.role)} replace />
   }
   return <>{children}</>
 }

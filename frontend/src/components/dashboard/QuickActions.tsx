@@ -24,9 +24,9 @@ export function QuickActions({ actions }: { actions: QuickAction[] }) {
             <Link
               key={action.label}
               to={action.to}
-              className="group flex items-start gap-3 rounded-lg border border-border p-3 transition-colors hover:border-primary/50 hover:bg-muted/50"
+              className="group flex items-start gap-3 rounded-xl border border-white/[0.08] bg-card/60 p-3.5 transition-all hover:border-amber-400/30 hover:bg-white/[0.03]"
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
                 <Icon className="size-4" aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">

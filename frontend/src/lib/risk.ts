@@ -16,8 +16,8 @@ export const RISK_META: Record<RiskLevel, RiskMeta> = {
     label: "Low",
     order: 0,
     badge:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
-    dot: "bg-emerald-500",
+      "border-emerald-500/25 bg-emerald-500/10 text-emerald-400",
+    dot: "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]",
     bar: "bg-emerald-500",
     hex: "#10b981",
   },
@@ -25,8 +25,8 @@ export const RISK_META: Record<RiskLevel, RiskMeta> = {
     label: "Medium",
     order: 1,
     badge:
-      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300",
-    dot: "bg-amber-500",
+      "border-amber-500/25 bg-amber-500/10 text-amber-300",
+    dot: "bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.7)]",
     bar: "bg-amber-500",
     hex: "#f59e0b",
   },
@@ -34,8 +34,8 @@ export const RISK_META: Record<RiskLevel, RiskMeta> = {
     label: "High",
     order: 2,
     badge:
-      "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900 dark:bg-orange-950 dark:text-orange-300",
-    dot: "bg-orange-500",
+      "border-orange-500/25 bg-orange-500/10 text-orange-300",
+    dot: "bg-orange-400 shadow-[0_0_6px_rgba(251,146,60,0.7)]",
     bar: "bg-orange-500",
     hex: "#f97316",
   },
@@ -43,10 +43,10 @@ export const RISK_META: Record<RiskLevel, RiskMeta> = {
     label: "Critical",
     order: 3,
     badge:
-      "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300",
-    dot: "bg-red-600",
-    bar: "bg-red-600",
-    hex: "#dc2626",
+      "border-rose-500/25 bg-rose-500/10 text-rose-300",
+    dot: "bg-rose-400 shadow-[0_0_6px_rgba(251,113,133,0.7)]",
+    bar: "bg-rose-500",
+    hex: "#f43f5e",
   },
 }
 

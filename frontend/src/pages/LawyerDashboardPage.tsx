@@ -62,9 +62,9 @@ const QUICK_ACTIONS: QuickAction[] = [
 ]
 
 const STATUS_COLORS: Record<string, string> = {
-  ASSIGNED: "#2563eb",
-  COMPLETED: "#10b981",
-  CLOSED: "#6b7280",
+  ASSIGNED: "#c9a86a",
+  COMPLETED: "#5faa8c",
+  CLOSED: "#6b7a90",
 }
 
 const STATUS_LABELS: Record<string, string> = {

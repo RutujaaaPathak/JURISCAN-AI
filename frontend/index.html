@@ -4,9 +4,32 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f7f8fb" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#12141c" media="(prefers-color-scheme: dark)" />
-    <title>JurisScan-AI</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f2ede1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#101a2e" media="(prefers-color-scheme: dark)" />
+    <meta name="robots" content="index, follow" />
+
+    <title>JurisScan-AI | Contract review and legal document analysis</title>
+    <meta
+      name="description"
+      content="JurisScan-AI turns legal documents into structured clauses and explained, rule-based risk findings, with a severity, a reason and a suggested action for each one."
+    />
+    <meta name="application-name" content="JurisScan-AI" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="JurisScan-AI" />
+    <meta property="og:title" content="JurisScan-AI | Contract review and legal document analysis" />
+    <meta
+      property="og:description"
+      content="Structured, explainable contract review: clause extraction and rule-based risk findings you can act on."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="JurisScan-AI" />
+    <meta
+      name="twitter:description"
+      content="Structured, explainable contract review: clause extraction and rule-based risk findings you can act on."
+    />
+
     <script>
       // Apply the saved theme before first paint to avoid a flash of the wrong
       // theme. Kept inline and dependency-free on purpose.
@@ -14,7 +37,7 @@
         try {
           var stored = window.localStorage.getItem("juriscan-theme");
           var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-          var isDark = stored === "dark" || ((stored === null || stored === "system") && prefersDark);
+          var isDark = stored === "dark" || stored === null || (stored === "system" && prefersDark);
           var root = document.documentElement;
           root.classList.toggle("dark", isDark);
           root.style.colorScheme = isDark ? "dark" : "light";

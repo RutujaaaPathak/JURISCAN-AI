@@ -6,6 +6,7 @@ import { AuthProvider } from "@/context/AuthProvider"
 import { RoleProvider } from "@/context/RoleContext"
 import { DashboardLayout } from "@/layouts/DashboardLayout"
 import { MainLayout } from "@/layouts/MainLayout"
+import { ScrollToTop } from "@/components/layout/ScrollToTop"
 import { AnalysisDetailPage } from "@/pages/AnalysisDetailPage"
 import { AnalysisReportsPage } from "@/pages/AnalysisReportsPage"
 import { AvailableCasesPage } from "@/pages/AvailableCasesPage"
@@ -15,6 +16,7 @@ import { DocumentsPage } from "@/pages/DocumentsPage"
 import { FindLawyerPage } from "@/pages/FindLawyerPage"
 import { HomePage } from "@/pages/HomePage"
 import { LawyerProfilePage } from "@/pages/LawyerProfilePage"
+import { PrivacyPage, TermsPage } from "@/pages/LegalPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { MessagesPage } from "@/pages/MessagesPage"
 import { MyCasesPage } from "@/pages/MyCasesPage"
@@ -32,6 +34,7 @@ function App() {
   return (
     <AuthProvider>
       <RoleProvider>
+        <ScrollToTop />
         <Routes>
           <Route element={<MainLayout />}>
             <Route index element={<HomePage />} />
@@ -59,6 +62,8 @@ function App() {
                 </RedirectIfAuthenticated>
               }
             />
+            <Route path="privacy" element={<PrivacyPage />} />
+            <Route path="terms" element={<TermsPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
           <Route
@@ -70,6 +75,30 @@ function App() {
             }
           >
             <Route index element={<DashboardPage />} />
+            <Route
+              path="client"
+              element={
+                <RequireRole roles={["individual"]}>
+                  <DashboardPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="company"
+              element={
+                <RequireRole roles={["company"]}>
+                  <DashboardPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="lawyer"
+              element={
+                <RequireRole roles={["lawyer"]}>
+                  <DashboardPage />
+                </RequireRole>
+              }
+            />
             <Route path="upload" element={<UploadPage />} />
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="reports" element={<AnalysisReportsPage />} />

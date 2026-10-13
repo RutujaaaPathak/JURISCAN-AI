@@ -9,8 +9,8 @@ function Select({ className, children, ...props }: ComponentProps<"select">) {
       <select
         data-slot="select"
         className={cn(
-          "h-9 w-full appearance-none rounded-lg border border-input bg-background py-1 pl-3 pr-8 text-sm shadow-xs transition-colors outline-none",
-          "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+          "h-9.5 w-full appearance-none rounded-xl border border-white/[0.1] bg-card/60 py-1.5 pl-3.5 pr-8 text-sm text-foreground shadow-xs transition-colors outline-none",
+          "focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/40",
           "disabled:cursor-not-allowed disabled:opacity-50",
           className,
         )}

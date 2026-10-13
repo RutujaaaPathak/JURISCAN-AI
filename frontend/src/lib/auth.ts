@@ -73,6 +73,8 @@ export interface AuthContextValue {
   login: (email: string, password: string) => Promise<AuthUser>
   register: (payload: RegisterPayload) => Promise<AuthUser>
   logout: () => void
+  /** Re-fetch the authenticated user (e.g. after a profile update). */
+  refresh: () => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

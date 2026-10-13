@@ -37,7 +37,7 @@ export function ActivityFeed({ items, empty }: { items: ActivityItem[]; empty?: 
               return (
                 <li
                   key={item.id}
-                  className="flex items-start gap-3 border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0"
+                  className="flex items-start gap-3 border-b border-white/[0.06] py-3 first:pt-0 last:border-b-0 last:pb-0"
                 >
                   <span
                     className={cn(

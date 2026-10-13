@@ -21,9 +21,11 @@ from app.models.clause import Clause
 from app.models.document import Document
 from app.models.lawyer import LAWYER_VERIFICATION_STATUSES, LawyerProfile
 from app.models.risk_finding import RiskFinding
+from app.models.settings import ANALYSIS_MODELS, SEVERITY_LEVELS, UserSettings
 from app.models.user import USER_ROLES, User
 
 __all__ = [
+    "ANALYSIS_MODELS",
     "APPOINTMENT_STATUSES",
     "Analysis",
     "CASE_CATEGORIES",
@@ -45,7 +47,9 @@ __all__ = [
     "LAWYER_VERIFICATION_STATUSES",
     "LawyerProfile",
     "RiskFinding",
+    "SEVERITY_LEVELS",
     "TimestampMixin",
     "USER_ROLES",
     "User",
+    "UserSettings",
 ]

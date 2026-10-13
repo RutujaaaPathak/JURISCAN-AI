@@ -65,13 +65,13 @@ export function SignUpPage() {
         {OPTIONS.map((option) => {
           const Icon = option.icon
           return (
-            <Card key={option.role} className="flex flex-col">
+            <Card key={option.role} className="surface-panel flex flex-col rounded-2xl border border-white/10 shadow-xl hover:border-amber-400/25 transition-all">
               <CardContent className="flex flex-1 flex-col gap-4 pt-6">
-                <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
                   <Icon className="size-5" aria-hidden="true" />
                 </span>
                 <div className="flex flex-col gap-1">
-                  <p className="font-semibold">{ROLE_META[option.role].label}</p>
+                  <p className="font-semibold text-foreground">{ROLE_META[option.role].label}</p>
                   <p className="text-sm text-muted-foreground">
                     {ROLE_META[option.role].description}
                   </p>
@@ -85,7 +85,7 @@ export function SignUpPage() {
                   ))}
                 </ul>
                 <Button
-                  className="mt-auto justify-between"
+                  className="btn-gold-primary mt-auto justify-between font-semibold"
                   onClick={() => navigate(`/signup/${option.role}`)}
                 >
                   Continue
