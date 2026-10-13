@@ -20,6 +20,23 @@ slice of the source string and ``start_offset``/``end_offset`` map back into it.
 Split points come from content, not from page breaks, so a clause that spills
 onto the next page is not torn in two (its page number is the page it starts on,
 computed later from the page spans).
+
+Known limitations (documented and asserted by tests rather than papered over):
+
+* Inline numbering inside a wrapping paragraph (``2.1 ... 2.2 ...`` on one line)
+  is not split. Doing so safely would require re-flowing the original text, so
+  the whole paragraph is returned as a single segment.
+* An unnumbered all-caps heading (``CONFIDENTIALITY``) is not treated as a
+  boundary while the document contains numbered clauses, so it stays inside the
+  surrounding clause. In a document with no numbering at all, paragraph
+  grouping keeps it as the first line of its block.
+* A single lowercase ``i``/``v``/``x`` marker is ambiguous with a lettered item.
+  Only parenthesised forms (``(i)``) and multi-letter Roman tokens (``ii.``,
+  ``iv)``) are treated as Roman numerals; single lowercase letters follow the
+  lettered-marker rules (``i`` is ignored to avoid misreading prose).
+* Hierarchy is inferred from nesting depth, not from numeric prefixes, so a
+  ``2.2.1`` clause with no preceding ``2.2`` nests under the nearest shallower
+  clause instead.
 """
 
 from __future__ import annotations
@@ -71,6 +88,11 @@ _BARE_DECIMAL_SPACE = re.compile(
 _BARE_ROMAN = re.compile(
     rf"^(?P<lead>{_LEAD})(?P<num>{_ROMAN})(?P<sep>[.):])(?:\s+(?P<title>\S.*))?$"
 )
+# Bare lowercase Roman subclause marker: "iv.", "iv)", "iii.". Restricted to
+# multi-letter tokens so a single letter ("a)", "c)") is never reinterpreted.
+_BARE_ROMAN_LOWER = re.compile(
+    rf"^(?P<lead>{_LEAD})(?P<num>[ivxlcdm]{{2,7}})(?P<sep>[.)])\s+(?P<title>\S.*)$"
+)
 # Bare uppercase lettered marker: "A. Definitions", "B) Term".
 _BARE_LETTER_UPPER = re.compile(
     rf"^(?P<lead>{_LEAD})(?P<num>[A-H])(?P<sep>[.)])\s+(?P<title>[A-Z][^\n]*)$"
@@ -95,9 +117,8 @@ class Segment:
     start_offset: int
     end_offset: int
     # Structural metadata (best-effort, deterministic). ``level`` is the inferred
-    # nesting depth (1 = top level) and ``parent`` is the index of the nearest
-    # enclosing segment, or ``None``. These are not persisted yet, so existing
-    # clause records and APIs are unaffected.
+    # nesting depth (1 = top level) and ``parent`` is the 0-based index of the nearest
+    # enclosing segment, or ``None``. These are persisted onto Clause records.
     label: str | None = None
     level: int = 1
     parent: int | None = None
@@ -182,6 +203,12 @@ def _detect_boundary(content: str) -> _Boundary | None:
     match = _BARE_ROMAN.match(content)
     if match and _looks_roman(match.group("num")):
         return _Boundary(match.group("num"), 1, "roman", stripped, len(match.group("lead")))
+
+    match = _BARE_ROMAN_LOWER.match(content)
+    if match and _looks_roman(match.group("num")):
+        # Lowercase Roman markers are subclause numerals, so they nest like the
+        # parenthesised form rather than opening a new top-level section.
+        return _Boundary(match.group("num"), 4, "roman", stripped, len(match.group("lead")))
 
     match = _BARE_LETTER_UPPER.match(content)
     if match:
@@ -293,44 +320,45 @@ def _segments_from_boundaries(
     return segments
 
 
+def _stripped_span(text: str, start: int, end: int) -> tuple[int, int]:
+    """Tighten ``[start, end)`` to the first/last non-whitespace characters."""
+
+    raw = text[start:end]
+    left = len(raw) - len(raw.lstrip())
+    right = len(raw.rstrip())
+    if right <= left:
+        return start, start
+    return start + left, start + right
+
+
 def _segments_from_paragraphs(text: str) -> list[Segment]:
-    blocks: list[tuple[int, str]] = []
+    # Collect exact source spans for each paragraph rather than trimmed strings,
+    # so merged paragraphs keep an exact ``text[start:end]`` mapping (the blank
+    # line between merged blocks is part of the slice).
+    spans: list[list[int]] = []
     position = 0
     for separator in _PARAGRAPH_BREAK.finditer(text):
-        block = text[position : separator.start()]
-        if block.strip():
-            blocks.append((position, block.strip()))
+        start, end = _stripped_span(text, position, separator.start())
+        if end > start:
+            spans.append([start, end])
         position = separator.end()
-    tail = text[position:]
-    if tail.strip():
-        blocks.append((position, tail.strip()))
+    start, end = _stripped_span(text, position, len(text))
+    if end > start:
+        spans.append([start, end])
 
-    if not blocks:
-        single = text.strip()
-        if not single:
-            return []
-        return [
-            Segment(
-                number=1,
-                heading=_stored_heading(_first_line(single)),
-                text=single,
-                start_offset=0,
-                end_offset=len(text),
-                level=1,
-                kind="paragraph",
-            )
-        ]
+    if not spans:
+        return []
 
-    merged: list[tuple[int, str]] = []
-    for offset, block in blocks:
-        if merged and len(merged[-1][1]) < MIN_CLAUSE_CHARACTERS:
-            previous_offset, previous_block = merged[-1]
-            merged[-1] = (previous_offset, f"{previous_block}\n{block}")
+    merged: list[list[int]] = []
+    for start, end in spans:
+        if merged and (merged[-1][1] - merged[-1][0]) < MIN_CLAUSE_CHARACTERS:
+            merged[-1][1] = end
         else:
-            merged.append((offset, block))
+            merged.append([start, end])
 
     segments: list[Segment] = []
-    for offset, block in merged:
+    for start, end in merged:
+        block = text[start:end]
         heading = None
         first = _first_line(block)
         if first and len(first) <= MAX_HEADING_LENGTH and len(block) > len(first):
@@ -340,8 +368,8 @@ def _segments_from_paragraphs(text: str) -> list[Segment]:
                 number=len(segments) + 1,
                 heading=_stored_heading(heading),
                 text=block,
-                start_offset=offset,
-                end_offset=offset + len(block),
+                start_offset=start,
+                end_offset=end,
                 level=1,
                 kind="paragraph",
             )

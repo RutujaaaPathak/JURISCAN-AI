@@ -39,6 +39,9 @@ class ClauseRead(ORMModel, Timestamped):
     page_number: int | None = None
     clause_type: str | None = None
     risk_level: str | None = None
+    label: str | None = None
+    level: int = 1
+    parent_id: int | None = None
 
 
 class RiskFindingRead(ORMModel, Timestamped):
@@ -54,6 +57,8 @@ class RiskFindingRead(ORMModel, Timestamped):
     clause_number: int | None = None
     clause_heading: str | None = None
     clause_page: int | None = None
+    clause_label: str | None = None
+    clause_level: int | None = None
 
 
 class AnalysisRead(ORMModel, Timestamped):

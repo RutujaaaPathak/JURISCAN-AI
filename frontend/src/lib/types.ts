@@ -63,6 +63,9 @@ export interface ClauseRead {
   page_number: number | null
   clause_type: string | null
   risk_level: string | null
+  label?: string | null
+  level?: number
+  parent_id?: number | null
   created_at: string
   updated_at: string
 }
@@ -80,6 +83,8 @@ export interface RiskFindingRead {
   clause_number: number | null
   clause_heading: string | null
   clause_page: number | null
+  clause_label?: string | null
+  clause_level?: number | null
   created_at: string
   updated_at: string
 }

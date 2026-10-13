@@ -123,6 +123,8 @@ def _finding_payload(finding: RiskFinding, clause: Clause | None) -> dict:
         "clause_number": clause.clause_number if clause else None,
         "clause_heading": clause.heading if clause else None,
         "clause_page": clause.page_number if clause else None,
+        "clause_label": clause.label if clause else None,
+        "clause_level": clause.level if clause else None,
         "created_at": finding.created_at,
         "updated_at": finding.updated_at,
     }
