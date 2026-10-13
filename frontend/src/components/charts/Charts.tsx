@@ -22,6 +22,8 @@ export function DonutChart({
   const total = data.reduce((sum, datum) => sum + datum.value, 0)
   const radius = (size - thickness) / 2
   const circumference = 2 * Math.PI * radius
+  const visible = data.filter((datum) => datum.value > 0)
+  const gap = visible.length > 1 ? Math.min(6, circumference / (visible.length * 3)) : 0
   let offset = 0
 
   return (
@@ -36,9 +38,9 @@ export function DonutChart({
           className="stroke-muted"
         />
         {total > 0
-          ? data.map((datum) => {
+          ? visible.map((datum) => {
               const length = (datum.value / total) * circumference
-              const dash = `${length} ${circumference - length}`
+              const dash = `${Math.max(length - gap, 0.5)} ${circumference - Math.max(length - gap, 0.5)}`
               const element = (
                 <circle
                   key={datum.label}
@@ -50,7 +52,7 @@ export function DonutChart({
                   stroke={datum.color ?? "var(--primary)"}
                   strokeDasharray={dash}
                   strokeDashoffset={-offset}
-                  strokeLinecap="butt"
+                  strokeLinecap="round"
                 />
               )
               offset += length
@@ -59,7 +61,9 @@ export function DonutChart({
           : null}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-semibold tracking-tight">{centerValue ?? total}</span>
+        <span className="text-2xl font-semibold tracking-tight tabular-nums">
+          {centerValue ?? total}
+        </span>
         {centerLabel ? <span className="text-xs text-muted-foreground">{centerLabel}</span> : null}
       </div>
     </div>
@@ -120,7 +124,7 @@ export function CategoryBars({
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className={cn("h-full rounded-full")}
+              className={cn("h-full rounded-full transition-[width] duration-500")}
               style={{ width: `${(datum.value / peak) * 100}%`, backgroundColor: datum.color ?? "var(--primary)" }}
             />
           </div>

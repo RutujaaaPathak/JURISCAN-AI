@@ -4,6 +4,7 @@ import { Link, NavLink } from "react-router-dom"
 
 import { Brand } from "@/components/layout/Brand"
 import { ConnectionStatus } from "@/components/layout/ConnectionStatus"
+import { ThemeToggle } from "@/components/layout/ThemeToggle"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -22,7 +23,7 @@ export function Navbar() {
     )
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <Brand />
 
@@ -39,20 +40,24 @@ export function Navbar() {
 
         <div className="hidden items-center gap-3 md:flex">
           <ConnectionStatus compact />
+          <ThemeToggle />
           <Button asChild size="sm">
             <Link to="/dashboard">Open dashboard</Link>
           </Button>
         </div>
 
-        <button
-          type="button"
-          className="inline-flex size-9 items-center justify-center rounded-md border border-border md:hidden"
-          aria-label={open ? "Close menu" : "Open menu"}
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? <X className="size-4" aria-hidden="true" /> : <Menu className="size-4" aria-hidden="true" />}
-        </button>
+        <div className="flex items-center gap-2 md:hidden">
+          <ThemeToggle />
+          <button
+            type="button"
+            className="inline-flex size-9 items-center justify-center rounded-lg border border-border transition-colors hover:bg-muted"
+            aria-label={open ? "Close menu" : "Open menu"}
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? <X className="size-4" aria-hidden="true" /> : <Menu className="size-4" aria-hidden="true" />}
+          </button>
+        </div>
       </div>
 
       {open ? (

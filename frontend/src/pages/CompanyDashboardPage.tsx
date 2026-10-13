@@ -21,6 +21,7 @@ import { ActivityFeed } from "@/components/dashboard/ActivityFeed"
 import { QuickActions } from "@/components/dashboard/QuickActions"
 import type { QuickAction } from "@/components/dashboard/QuickActions"
 import { StatCard } from "@/components/dashboard/StatCard"
+import { PageHeader } from "@/components/layout/PageHeader"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -330,20 +331,18 @@ export function CompanyDashboardPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Company overview</h1>
-          <p className="text-sm text-muted-foreground">
-            Contract portfolio health across uploads, analyses and detected risk.
-          </p>
-        </div>
-        <Button asChild>
-          <Link to="/dashboard/upload">
-            <Upload className="size-4" aria-hidden="true" />
-            Upload contract
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title="Company overview"
+        description="Contract portfolio health across uploads, analyses and detected risk."
+        actions={
+          <Button asChild>
+            <Link to="/dashboard/upload">
+              <Upload className="size-4" aria-hidden="true" />
+              Upload contract
+            </Link>
+          </Button>
+        }
+      />
 
       <Alert variant="info">
         <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

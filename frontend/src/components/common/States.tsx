@@ -36,9 +36,11 @@ export function ErrorState({
   onRetry?: () => void
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-8 text-center">
-      <AlertTriangle className="size-6 text-destructive" aria-hidden="true" />
-      <div>
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center">
+      <span className="flex size-10 items-center justify-center rounded-full bg-destructive/12 text-destructive">
+        <AlertTriangle className="size-5" aria-hidden="true" />
+      </span>
+      <div className="flex flex-col gap-1">
         <p className="font-medium text-foreground">{title}</p>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
       </div>
@@ -63,13 +65,15 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border p-10 text-center">
-      <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-10 text-center">
+      <span className="flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Icon className="size-5" aria-hidden="true" />
       </span>
-      <div>
+      <div className="flex flex-col gap-1">
         <p className="font-medium text-foreground">{title}</p>
-        {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+        {description ? (
+          <p className="mx-auto max-w-sm text-sm text-muted-foreground">{description}</p>
+        ) : null}
       </div>
       {action}
     </div>

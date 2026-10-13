@@ -5,6 +5,7 @@ import { Outlet, useLocation } from "react-router-dom"
 import { Brand } from "@/components/layout/Brand"
 import { ConnectionStatus } from "@/components/layout/ConnectionStatus"
 import { Sidebar } from "@/components/layout/Sidebar"
+import { ThemeToggle } from "@/components/layout/ThemeToggle"
 import { Badge } from "@/components/ui/badge"
 import { useRole } from "@/context/RoleContext"
 import { findNavItemLabel } from "@/lib/navigation"
@@ -18,8 +19,8 @@ export function DashboardLayout() {
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="hidden w-64 shrink-0 border-r border-border md:flex md:flex-col">
-        <div className="flex h-16 items-center border-b border-border px-4">
+      <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex md:flex-col">
+        <div className="flex h-16 items-center border-b border-sidebar-border px-4">
           <Brand to="/dashboard" />
         </div>
         <Sidebar />
@@ -28,18 +29,18 @@ export function DashboardLayout() {
       {drawerOpen ? (
         <div className="fixed inset-0 z-50 md:hidden">
           <div
-            className="absolute inset-0 bg-black/50"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
           />
-          <aside className="absolute top-0 left-0 h-full w-64 border-r border-border bg-background">
-            <div className="flex h-16 items-center justify-between border-b border-border px-4">
+          <aside className="absolute top-0 left-0 h-full w-72 max-w-[85vw] border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-2xl">
+            <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
               <Brand to="/dashboard" />
               <button
                 type="button"
                 aria-label="Close navigation"
                 onClick={() => setDrawerOpen(false)}
-                className="rounded-md p-1 text-muted-foreground hover:text-foreground"
+                className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <X className="size-4" aria-hidden="true" />
               </button>
@@ -50,25 +51,33 @@ export function DashboardLayout() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur sm:px-6">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               aria-label="Open navigation"
               onClick={() => setDrawerOpen(true)}
-              className="inline-flex size-9 items-center justify-center rounded-md border border-border md:hidden"
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground md:hidden"
             >
               <Menu className="size-4" aria-hidden="true" />
             </button>
-            <span className="text-sm font-medium">{title}</span>
-            <Badge variant="outline" className="hidden sm:inline-flex">
-              {ROLE_META[role].label} workspace
-            </Badge>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="truncate text-sm font-semibold tracking-tight">{title}</span>
+              <Badge
+                variant="secondary"
+                className="hidden shrink-0 border border-primary/15 bg-primary/10 text-primary sm:inline-flex"
+              >
+                {ROLE_META[role].label} workspace
+              </Badge>
+            </div>
           </div>
-          <ConnectionStatus compact />
+          <div className="flex shrink-0 items-center gap-2">
+            <ConnectionStatus compact />
+            <ThemeToggle />
+          </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6">
+        <main className="bg-app-sheen flex-1 p-4 sm:p-6 lg:p-8">
           <Outlet />
         </main>
       </div>
