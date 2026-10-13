@@ -24,10 +24,13 @@ models/*.h5
 models/*.onnx
 models/*.pt
 models/*.bin
+models/*.safetensors
+models/inlegalbert_*/
 
 # Data
 data/raw/
 data/processed/
+data/uploads/
 backend/data/
 *.csv.tmp
 

@@ -1,0 +1,219 @@
+{
+  "batch": 1,
+  "version": "0.1-pilot",
+  "record_count": 100,
+  "id_range": [
+    "JSIN_000001",
+    "JSIN_000100"
+  ],
+  "by_category": {
+    "ARBITRATION": 5,
+    "ASSIGNMENT_AND_SUBCONTRACTING": 3,
+    "AUDIT_AND_ACCESS_RIGHTS": 3,
+    "CONFIDENTIALITY": 5,
+    "CONSENT_AND_AUTHORIZATION": 4,
+    "CONSUMER_RIGHTS_AND_REFUNDS": 4,
+    "DATA_PRIVACY": 5,
+    "DISPUTE_RESOLUTION": 3,
+    "EMPLOYMENT_AND_COMPENSATION": 4,
+    "FORCE_MAJEURE": 3,
+    "INDEMNIFICATION": 5,
+    "INTELLECTUAL_PROPERTY": 5,
+    "JURISDICTION_AND_GOVERNING_LAW": 4,
+    "LIABILITY": 5,
+    "NON_COMPETE_AND_NON_SOLICITATION": 4,
+    "NOTICE_PERIOD": 4,
+    "OTHER": 2,
+    "PAYMENT_AND_FEES": 5,
+    "PAYMENT_DEFAULT_AND_LATE_FEES": 3,
+    "PENALTIES_AND_LIQUIDATED_DAMAGES": 4,
+    "RENEWAL_AND_AUTO_RENEWAL": 4,
+    "RENTAL_AND_TENANCY": 5,
+    "SERVICE_LEVELS_AND_DELIVERABLES": 3,
+    "TERMINATION": 5,
+    "WARRANTIES_AND_REPRESENTATIONS": 3
+  },
+  "by_risk": {
+    "LOW": 36,
+    "MEDIUM": 39,
+    "HIGH": 25
+  },
+  "by_contract_type": {
+    "CONSUMER_SERVICE": 8,
+    "EMPLOYMENT": 21,
+    "FREELANCE_CONSULTING": 7,
+    "NDA": 3,
+    "PRIVACY_POLICY": 5,
+    "RENTAL_LEASE": 13,
+    "SERVICE_AGREEMENT": 18,
+    "TERMS_AND_CONDITIONS": 12,
+    "VENDOR_BUSINESS": 13
+  },
+  "by_affected_party": {
+    "BOTH_PARTIES": 18,
+    "BUYER": 4,
+    "CLIENT": 1,
+    "CONSUMER": 19,
+    "DATA_PRINCIPAL": 5,
+    "EMPLOYEE": 21,
+    "FREELANCER": 6,
+    "RECEIVING_PARTY": 2,
+    "SERVICE_PROVIDER": 5,
+    "SERVICE_RECIPIENT": 5,
+    "TENANT": 11,
+    "VENDOR": 3
+  },
+  "category_x_risk": {
+    "ARBITRATION": {
+      "LOW": 2,
+      "HIGH": 1,
+      "MEDIUM": 2
+    },
+    "ASSIGNMENT_AND_SUBCONTRACTING": {
+      "LOW": 1,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "AUDIT_AND_ACCESS_RIGHTS": {
+      "LOW": 1,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "CONFIDENTIALITY": {
+      "LOW": 2,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "CONSENT_AND_AUTHORIZATION": {
+      "LOW": 1,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "CONSUMER_RIGHTS_AND_REFUNDS": {
+      "LOW": 1,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "DATA_PRIVACY": {
+      "LOW": 2,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "DISPUTE_RESOLUTION": {
+      "LOW": 1,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "EMPLOYMENT_AND_COMPENSATION": {
+      "LOW": 2,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "FORCE_MAJEURE": {
+      "LOW": 1,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "INDEMNIFICATION": {
+      "LOW": 2,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "INTELLECTUAL_PROPERTY": {
+      "LOW": 2,
+      "HIGH": 1,
+      "MEDIUM": 2
+    },
+    "JURISDICTION_AND_GOVERNING_LAW": {
+      "LOW": 2,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "LIABILITY": {
+      "LOW": 2,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "NON_COMPETE_AND_NON_SOLICITATION": {
+      "LOW": 1,
+      "HIGH": 1,
+      "MEDIUM": 2
+    },
+    "NOTICE_PERIOD": {
+      "LOW": 2,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "OTHER": {
+      "LOW": 1,
+      "MEDIUM": 1
+    },
+    "PAYMENT_AND_FEES": {
+      "LOW": 2,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "PAYMENT_DEFAULT_AND_LATE_FEES": {
+      "LOW": 1,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "PENALTIES_AND_LIQUIDATED_DAMAGES": {
+      "LOW": 1,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "RENEWAL_AND_AUTO_RENEWAL": {
+      "LOW": 1,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "RENTAL_AND_TENANCY": {
+      "LOW": 1,
+      "MEDIUM": 2,
+      "HIGH": 2
+    },
+    "SERVICE_LEVELS_AND_DELIVERABLES": {
+      "LOW": 1,
+      "MEDIUM": 1,
+      "HIGH": 1
+    },
+    "TERMINATION": {
+      "LOW": 2,
+      "MEDIUM": 2,
+      "HIGH": 1
+    },
+    "WARRANTIES_AND_REPRESENTATIONS": {
+      "LOW": 1,
+      "MEDIUM": 1,
+      "HIGH": 1
+    }
+  },
+  "needs_legal_review": 52,
+  "context_required": 27,
+  "legal_references_asserted": 0,
+  "review_status": "all SYNTHETIC_UNREVIEWED",
+  "words_per_clause": {
+    "min": 12,
+    "median": 34,
+    "max": 63
+  },
+  "shared_split_groups": 5,
+  "validation": {
+    "errors": [],
+    "near_duplicate_pairs_jaccard5gram_ge_0_5": [],
+    "checks": [
+      "unique ids",
+      "field set and order",
+      "enum membership",
+      "type checks",
+      "risk_type vs risk_level",
+      "notes required for context/NEEDS_REVIEW",
+      "legal_reference null",
+      "exact duplicates",
+      "5-word-shingle near duplicates",
+      "JSONL round-trip parse"
+    ],
+    "disclaimer": "Automated structural checks only. Not legal validation."
+  }
+}

@@ -17,7 +17,7 @@ import {
   ShieldAlert,
   Upload,
 } from "lucide-react"
-import { useCallback } from "react"
+import { useCallback, useEffect } from "react"
 import { Link } from "react-router-dom"
 
 import { SeverityBadge, StatusBadge } from "@/components/analysis/RiskBadges"
@@ -46,7 +46,7 @@ import { useStatus } from "@/hooks/useStatus"
 import { buildActivity } from "@/lib/activity"
 import { API_BASE_URL } from "@/lib/api"
 import { getClientOverview, getNotifications } from "@/lib/caseWorkspace"
-import { getOverviewStats, listDocuments } from "@/lib/documents"
+import { DOCUMENTS_CHANGED_EVENT, getOverviewStats, listDocuments } from "@/lib/documents"
 import { formatDateTime, formatFileType } from "@/lib/format"
 import { RISK_LEVELS, RISK_META, riskLevelFromScoreOrNull, toRiskLevel } from "@/lib/risk"
 import { ROLE_META } from "@/lib/roles"
@@ -521,6 +521,15 @@ function IndividualDashboard() {
   const docsLoader = useCallback(() => listDocuments({ limit: 8 }), [])
   const { state: stats, refresh: refreshStats } = useAsync(statsLoader)
   const { state: docs, refresh: refreshDocs } = useAsync(docsLoader)
+
+  useEffect(() => {
+    const handleDocumentsChanged = () => {
+      void refreshStats()
+      void refreshDocs()
+    }
+    window.addEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged)
+    return () => window.removeEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged)
+  }, [refreshStats, refreshDocs])
 
   const statsLoading = stats.phase === "loading" || stats.phase === "idle"
   const isEmpty = stats.phase === "ok" && stats.data !== null && stats.data.total_documents === 0

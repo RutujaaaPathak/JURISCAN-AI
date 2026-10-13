@@ -1,17 +1,19 @@
-import { riskLevelFromScore, RISK_META } from "@/lib/risk"
+import { riskLevelFromScore, RISK_META, type RiskLevel } from "@/lib/risk"
 
 export function RiskScore({
   score,
   size = 132,
   thickness = 12,
   label = "Risk score",
+  level,
 }: {
   score: number
   size?: number
   thickness?: number
   label?: string
+  level?: RiskLevel | null
 }) {
-  const level = riskLevelFromScore(score)
+  const resolvedLevel = level ?? riskLevelFromScore(score)
   const radius = (size - thickness) / 2
   const circumference = 2 * Math.PI * radius
   const progress = Math.min(100, Math.max(0, score))
@@ -35,7 +37,7 @@ export function RiskScore({
             r={radius}
             fill="none"
             strokeWidth={thickness}
-            stroke={RISK_META[level].hex}
+            stroke={RISK_META[resolvedLevel].hex}
             strokeDasharray={`${dash} ${circumference - dash}`}
             strokeLinecap="round"
           />
@@ -47,8 +49,8 @@ export function RiskScore({
       </div>
       <div className="text-center">
         <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs" style={{ color: RISK_META[level].hex }}>
-          {RISK_META[level].label} risk
+        <p className="text-xs" style={{ color: RISK_META[resolvedLevel].hex }}>
+          {RISK_META[resolvedLevel].label} risk
         </p>
       </div>
     </div>

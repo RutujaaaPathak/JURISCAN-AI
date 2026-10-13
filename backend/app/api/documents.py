@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Query, UploadFile
+from fastapi.responses import Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -17,18 +18,25 @@ from app.models import Analysis, Case, CaseDocument, Clause, Document, RiskFindi
 from app.schemas.documents import (
     AnalysisDetail,
     ClauseRead,
+    DeleteAllResult,
     DocumentDetail,
     DocumentListResponse,
     DocumentSummary,
     OverviewStats,
     RiskFindingRead,
 )
-from app.services.analysis import RULES
+from app.services.analysis import LEGACY_RULE_CATEGORIES, RULES
+from app.services.processing import delete_all_documents as delete_all_documents_service
+from app.services.processing import delete_document as delete_document_service
 from app.services.processing import process_upload
+from app.services.report import build_report_pdf
 
 router = APIRouter(tags=["documents"])
 
-RULE_CATEGORY = {rule.code: rule.category for rule in RULES}
+RULE_CATEGORY = {
+    **LEGACY_RULE_CATEGORIES,
+    **{rule.code: rule.category for rule in RULES},
+}
 RISK_ORDER = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
 
 
@@ -42,6 +50,21 @@ def _risk_band(score: float | None) -> str | None:
     if score >= 25:
         return "MEDIUM"
     return "LOW"
+
+
+def _safety_score(score: float | None) -> float | None:
+    """Derive an explainable legal-safety score (0-100, higher = lower risk).
+
+    The rule-based risk score is the capped sum of severity weights
+    (LOW 4, MEDIUM 10, HIGH 20, CRITICAL 35). Safety is its inverse: a clean
+    document without findings scores 100 and every finding reduces it by its
+    weight, floored at 0. Computed at serialization time so it applies to both
+    new and already-stored analyses without a schema change.
+    """
+
+    if score is None:
+        return None
+    return round(max(0.0, min(100.0, 100.0 - score)), 1)
 
 
 def _document_query():
@@ -78,6 +101,7 @@ def _summary_payload(document: Document) -> dict:
         "model_name": analysis.model_name if analysis else None,
         "risk_score": analysis.risk_score if analysis else None,
         "risk_level": _risk_band(analysis.risk_score) if analysis else None,
+        "safety_score": _safety_score(analysis.risk_score) if analysis else None,
         "finding_count": len(findings),
         "high_risk_count": sum(
             1 for finding in findings if finding.severity in ("HIGH", "CRITICAL")
@@ -113,6 +137,7 @@ def _analysis_payload(analysis: Analysis, clauses_by_id: dict[int, Clause]) -> d
         "model_name": analysis.model_name,
         "status": analysis.status,
         "risk_score": analysis.risk_score,
+        "safety_score": _safety_score(analysis.risk_score),
         "summary": analysis.summary,
         "started_at": analysis.started_at,
         "completed_at": analysis.completed_at,
@@ -243,6 +268,7 @@ async def upload_document(
     user: CurrentUser,
     file: UploadFile = File(...),
     title: str | None = Form(default=None, max_length=255),
+    force: bool = Form(default=False),
 ) -> dict:
     filename = Path(file.filename or "document").name
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
@@ -259,6 +285,7 @@ async def upload_document(
         content_type=file.content_type,
         title=title,
         max_size_bytes=max_bytes,
+        force=force,
     )
 
     document = _get_document_or_404(db, document.id, user.id)
@@ -307,6 +334,57 @@ def list_documents(
 def get_document(db: DbSession, user: CurrentUser, document_id: int) -> dict:
     document = _get_document_or_404(db, document_id, user.id)
     return _detail_payload(document)
+
+
+@router.delete("/documents", response_model=DeleteAllResult)
+def delete_all_documents(db: DbSession, user: CurrentUser) -> dict:
+    deleted = delete_all_documents_service(db, user.id)
+    return {"deleted": deleted}
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+def delete_document(
+    db: DbSession,
+    user: CurrentUser,
+    document_id: int,
+) -> Response:
+    document = _get_document_or_404(db, document_id, user.id)
+    delete_document_service(db, document)
+    return Response(status_code=204)
+
+
+@router.get("/documents/{document_id}/report")
+def get_analysis_report(
+    db: DbSession,
+    user: CurrentUser,
+    document_id: int,
+) -> Response:
+    document = _get_document_or_404(db, document_id, user.id)
+    if document.status != "PROCESSED":
+        raise ValidationFailed(
+            "The report is only available once the document has been analyzed.",
+            code="report_not_available",
+            details={"document_id": document_id, "status": document.status},
+        )
+    analysis = _latest_analysis(document)
+    if analysis is None:
+        raise ValidationFailed(
+            "No analysis exists for this document yet.",
+            code="report_not_available",
+            details={"document_id": document_id},
+        )
+    clauses = sorted(document.clauses, key=lambda clause: clause.clause_number)
+    clauses_by_id = {clause.id: clause for clause in clauses}
+    payload = build_report_pdf(document, analysis, clauses_by_id)
+    return Response(
+        content=payload,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="juriscan-analysis-{document.id}.pdf"'
+            )
+        },
+    )
 
 
 @router.get("/analyses/{analysis_id}", response_model=AnalysisDetail)

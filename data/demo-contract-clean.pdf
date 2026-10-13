@@ -1,0 +1,112 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<<
+/Producer (pypdf)
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Count 1
+/Kids [ 4 0 R ]
+>>
+endobj
+3 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+/Outlines 7 0 R
+>>
+endobj
+4 0 obj
+<<
+/Type /Page
+/MediaBox [ 0 0 612 792 ]
+/Resources <<
+/Font <<
+/F1 5 0 R
+>>
+>>
+/Contents 6 0 R
+/Parent 2 0 R
+>>
+endobj
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+6 0 obj
+<<
+/Length 913
+>>
+stream
+BT
+/F1 11 Tf
+14 TL
+72 720 Td
+(Services Agreement - Clean) Tj
+T*
+(This agreement between Alpha Ltd and Gamma Co covers IT support.) Tj
+T*
+(1. Services) Tj
+T*
+(Alpha will provide support, maintenance and upgrades for the software.) Tj
+T*
+(2. Payment) Tj
+T*
+(Fees are invoiced monthly and payable within 60 days of receipt of) Tj
+T*
+(invoice by bank transfer.) Tj
+T*
+(3. Term) Tj
+T*
+(This agreement renews automatically for yearly periods unless a party) Tj
+T*
+(gives written notice ninety days before renewal.) Tj
+T*
+(4. Confidentiality) Tj
+T*
+(The parties keep confidential information private for five years and) Tj
+T*
+(may disclose it to advisors on a need-to-know basis.) Tj
+T*
+(5. Data Processing) Tj
+T*
+(Each party acts as an independent data controller under the applicable) Tj
+T*
+(data protection legislation.) Tj
+T*
+(6. Disputes) Tj
+T*
+(Disputes shall be resolved by arbitration seated in London.) Tj
+T*
+ET
+endstream
+endobj
+7 0 obj
+<<
+>>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000054 00000 n 
+0000000113 00000 n 
+0000000178 00000 n 
+0000000306 00000 n 
+0000000376 00000 n 
+0000001340 00000 n 
+trailer
+<<
+/Size 8
+/Root 3 0 R
+/Info 1 0 R
+>>
+startxref
+1361
+%%EOF

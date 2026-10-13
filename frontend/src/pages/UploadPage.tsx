@@ -2,8 +2,10 @@ import {
   AlertTriangle,
   CheckCircle2,
   CloudUpload,
+  ExternalLink,
   FileText,
   Loader2,
+  RotateCcw,
   Sparkles,
   Trash2,
   X,
@@ -11,6 +13,7 @@ import {
 import { useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
+import { AnalysisResults } from "@/components/analysis/AnalysisResults"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -18,7 +21,7 @@ import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/components/ui/toast"
 import { ApiError } from "@/lib/api"
 import { uploadDocument } from "@/lib/documents"
-import type { DocumentDetail } from "@/lib/types"
+import type { DocumentDetail, DuplicateDocumentDetails } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const ACCEPTED = [".pdf", ".docx", ".txt"]
@@ -51,6 +54,8 @@ interface UploadResult {
   status: ResultStatus
   message: string
   document?: DocumentDetail
+  documentId?: number
+  analysisId?: number
 }
 
 function formatSize(bytes: number) {
@@ -68,11 +73,17 @@ export function UploadPage() {
   const [fileProgress, setFileProgress] = useState<Record<string, number>>({})
   const [completed, setCompleted] = useState(0)
   const [results, setResults] = useState<UploadResult[]>([])
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
   const lastSuccess = useMemo(
     () => [...results].reverse().find((result) => result.status === "ok")?.document,
+    [results],
+  )
+
+  const issueResults = useMemo(
+    () => results.filter((result) => result.status !== "ok"),
     [results],
   )
 
@@ -134,6 +145,14 @@ export function UploadPage() {
     setFileProgress({})
   }
 
+  const resetAll = () => {
+    setFiles([])
+    setInvalidFiles([])
+    setFileProgress({})
+    setResults([])
+    setCompleted(0)
+  }
+
   const analyze = async () => {
     if (files.length === 0 || uploading) return
     setUploading(true)
@@ -153,16 +172,25 @@ export function UploadPage() {
           id: item.id,
           filename: item.file.name,
           status: "ok",
-          message: `Analyzed — risk ${document.risk_score ?? 0}/100, ${document.finding_count} finding(s).`,
+          message: `Analyzed — legal safety ${Math.round(document.safety_score ?? 0)}/100, risk ${(document.risk_level ?? "—").toLowerCase()}, ${document.finding_count} finding(s).`,
           document,
         })
       } catch (error) {
         if (error instanceof ApiError && error.code === "duplicate_document") {
+          const details = (error.details ?? {}) as DuplicateDocumentDetails
+          const alreadyAnalyzed = details.analysis_id != null
           collected.push({
             id: item.id,
             filename: item.file.name,
             status: "duplicate",
-            message: error.message,
+            message:
+              details.status === "PROCESSING"
+                ? "This file is already being processed. Wait a moment, then open the analysis."
+                : alreadyAnalyzed
+                  ? "Already analyzed. Open the existing analysis, or analyze it again to refresh the findings."
+                  : "Already uploaded but not analyzed yet. Use \u201cAnalyze again\u201d to run the analysis.",
+            documentId: details.document_id,
+            analysisId: details.analysis_id ?? undefined,
           })
         } else {
           collected.push({
@@ -180,8 +208,9 @@ export function UploadPage() {
     setActiveId(null)
     setUploading(false)
     const succeeded = collected.filter((result) => result.status === "ok").length
-    const failed = collected.length - succeeded
-    if (succeeded > 0 && failed === 0) {
+    const duplicates = collected.filter((result) => result.status === "duplicate").length
+    const errors = collected.filter((result) => result.status === "error").length
+    if (succeeded > 0 && duplicates === 0 && errors === 0) {
       toast({
         title: "Analysis complete",
         description: `${succeeded} document(s) analyzed with the rule-based baseline.`,
@@ -190,28 +219,121 @@ export function UploadPage() {
     } else if (succeeded > 0) {
       toast({
         title: "Partially completed",
-        description: `${succeeded} analyzed, ${failed} skipped or failed.`,
+        description: `${succeeded} analyzed, ${duplicates} already analyzed, ${errors} failed.`,
+        variant: "warning",
+      })
+    } else if (duplicates > 0 && errors === 0) {
+      toast({
+        title: "Already analyzed",
+        description: `${duplicates} file(s) were already analyzed. Open the existing analysis or choose \u201cAnalyze again\u201d.`,
         variant: "warning",
       })
     } else {
+      const reasons: string[] = []
+      if (duplicates > 0) reasons.push(`${duplicates} already analyzed`)
+      if (errors > 0) reasons.push(`${errors} failed`)
       toast({
-        title: "Nothing analyzed",
-        description: "No documents could be processed. See the details below.",
-        variant: "destructive",
+        title: errors > 0 ? "Nothing analyzed" : "Already analyzed",
+        description: reasons.length
+          ? `${reasons.join(", ")}. See the per-file details below.`
+          : "No documents could be processed. See the per-file details below.",
+        variant: errors > 0 ? "destructive" : "warning",
       })
     }
+  }
+
+  const analyzeAgain = async (result: UploadResult) => {
+    const item = files.find((entry) => entry.id === result.id)
+    if (!item || reanalyzingId !== null || uploading) return
+    setReanalyzingId(result.id)
+    setFileProgress((current) => ({ ...current, [result.id]: 0 }))
+    try {
+      const document = await uploadDocument(
+        item.file,
+        undefined,
+        (percent) => {
+          setFileProgress((current) => ({ ...current, [result.id]: percent }))
+        },
+        true,
+      )
+      setResults((current) =>
+        current.map((entry) =>
+          entry.id === result.id
+            ? {
+                id: entry.id,
+                filename: entry.filename,
+                status: "ok" as const,
+                message: `Analyzed — legal safety ${Math.round(document.safety_score ?? 0)}/100, risk ${(document.risk_level ?? "—").toLowerCase()}, ${document.finding_count} finding(s).`,
+                document,
+              }
+            : entry,
+        ),
+      )
+      toast({
+        title: "Re-analysis complete",
+        description: `${item.file.name} was analyzed again.`,
+        variant: "success",
+      })
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Upload failed."
+      setResults((current) =>
+        current.map((entry) =>
+          entry.id === result.id ? { ...entry, status: "error" as const, message } : entry,
+        ),
+      )
+      toast({ title: "Re-analysis failed", description: message, variant: "destructive" })
+    } finally {
+      setReanalyzingId(null)
+      setFileProgress((current) => {
+        const next = { ...current }
+        delete next[result.id]
+        return next
+      })
+    }
+  }
+
+  const renderIssueActions = (result: UploadResult) => {
+    if (result.status !== "duplicate" || result.documentId === undefined) return null
+    const busy = reanalyzingId === result.id
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {result.analysisId !== undefined ? (
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/dashboard/analyses/${result.documentId}`}>
+              <ExternalLink className="size-4" aria-hidden="true" />
+              View existing analysis
+            </Link>
+          </Button>
+        ) : null}
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={busy || uploading}
+          onClick={() => void analyzeAgain(result)}
+        >
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <RotateCcw className="size-4" aria-hidden="true" />
+          )}
+          Analyze again
+        </Button>
+      </div>
+    )
   }
 
   const overallProgress = files.length === 0 ? 0 : (completed / files.length) * 100
   const hasResults = results.length > 0
   const hasInvalid = invalidFiles.length > 0
+  const showResults = lastSuccess !== undefined && !uploading
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Upload document</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Contract Risk Analysis</h1>
         <p className="text-sm text-muted-foreground">
-          Add a contract to review. PDF, DOCX and TXT up to 25 MB.
+          Upload a contract to identify potential contractual risks and get a plain-English
+          review on this page.
         </p>
       </div>
 
@@ -222,174 +344,199 @@ export function UploadPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-        <div className="flex flex-col gap-4">
-          <Card>
-            <CardContent>
-              <label
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setDragging(true)
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  setDragging(false)
-                  addFiles(event.dataTransfer.files)
-                }}
-                className={cn(
-                  "flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors",
-                  dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/40",
-                  uploading && "pointer-events-none opacity-60",
-                )}
-              >
-                <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <CloudUpload className="size-6" aria-hidden="true" />
-                </span>
-                <div>
-                  <p className="font-medium">Drag &amp; drop your contract here</p>
-                  <p className="text-sm text-muted-foreground">or click to browse your files</p>
-                </div>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  multiple
-                  accept={ACCEPTED.join(",")}
-                  className="sr-only"
-                  onChange={(event) => {
-                    addFiles(event.target.files)
-                    event.target.value = ""
-                  }}
-                />
-                <span className="text-xs text-muted-foreground">PDF · DOCX · TXT — up to 25 MB each</span>
-              </label>
-            </CardContent>
-          </Card>
-
-          {files.length > 0 ? (
-            <Card>
-              <CardHeader className="flex-row items-center justify-between">
-                <CardTitle>Selected files ({files.length})</CardTitle>
-                <Button variant="ghost" size="sm" onClick={clearAll} disabled={uploading}>
-                  Clear all
-                </Button>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                {files.map((item) => {
-                  const percent = fileProgress[item.id]
-                  const result = results.find((entry) => entry.id === item.id)
-                  const isActive = uploading && activeId === item.id && result === undefined
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2.5"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                          <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{item.file.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatSize(item.file.size)}
-                            {isActive && percent !== undefined ? ` · uploading ${percent}%` : ""}
-                            {result?.status === "ok" ? " · analyzed" : ""}
-                            {result?.status === "duplicate" ? " · duplicate" : ""}
-                            {result?.status === "error" ? " · failed" : ""}
-                          </p>
-                        </div>
-                        {isActive ? (
-                          <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden="true" />
-                        ) : result?.status === "ok" ? (
-                          <CheckCircle2 className="size-4 shrink-0 text-emerald-500" aria-hidden="true" />
-                        ) : result ? (
-                          <AlertTriangle className="size-4 shrink-0 text-amber-500" aria-hidden="true" />
+        <div className="flex min-w-0 flex-col gap-4">
+          {showResults ? (
+            <>
+              {issueResults.length > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Other files</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2">
+                    {issueResults.map((result) => (
+                      <div
+                        key={result.id}
+                        className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5"
+                      >
+                        {result.status === "duplicate" ? (
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
                         ) : (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            aria-label={`Remove ${item.file.name}`}
-                            onClick={() => removeFile(item.id)}
-                            disabled={uploading}
-                          >
-                            <Trash2 className="size-4" aria-hidden="true" />
-                          </Button>
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
                         )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{result.filename}</p>
+                          <p className="text-xs text-muted-foreground">{result.message}</p>
+                          {renderIssueActions(result)}
+                        </div>
                       </div>
-                      {isActive ? <Progress value={percent ?? 0} /> : null}
-                    </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {hasInvalid ? (
-            <Card>
-              <CardHeader className="flex-row items-center justify-between">
-                <CardTitle>Rejected files ({invalidFiles.length})</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setInvalidFiles([])}>
-                  Dismiss
-                </Button>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                {invalidFiles.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2.5"
-                  >
-                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{item.name}</p>
-                      <p className="text-xs text-muted-foreground">{item.reason}</p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Dismiss ${item.name}`}
-                      onClick={() => removeInvalid(item.id)}
-                    >
-                      <X className="size-4" aria-hidden="true" />
-                    </Button>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {hasResults ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Results</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-2">
-                {results.map((result) => (
-                  <div key={result.id} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
-                    {result.status === "ok" ? (
-                      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden="true" />
-                    ) : result.status === "duplicate" ? (
-                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
-                    ) : (
-                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
+              {lastSuccess ? <AnalysisResults doc={lastSuccess} onAnalyzeAnother={resetAll} /> : null}
+            </>
+          ) : (
+            <>
+              <Card>
+                <CardContent>
+                  <label
+                    onDragOver={(event) => {
+                      event.preventDefault()
+                      setDragging(true)
+                    }}
+                    onDragLeave={() => setDragging(false)}
+                    onDrop={(event) => {
+                      event.preventDefault()
+                      setDragging(false)
+                      addFiles(event.dataTransfer.files)
+                    }}
+                    className={cn(
+                      "flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors",
+                      dragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/40",
+                      uploading && "pointer-events-none opacity-60",
                     )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{result.filename}</p>
-                      <p className="text-xs text-muted-foreground">{result.message}</p>
+                  >
+                    <span className="flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <CloudUpload className="size-6" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <p className="font-medium">Drag &amp; drop your contract here</p>
+                      <p className="text-sm text-muted-foreground">or click to browse your files</p>
                     </div>
-                  </div>
-                ))}
-                <div className="flex flex-wrap justify-end gap-2 pt-1">
-                  <Button asChild variant="outline" size="sm">
-                    <Link to="/dashboard/documents">All documents</Link>
-                  </Button>
-                  {lastSuccess ? (
-                    <Button asChild size="sm">
-                      <Link to={`/dashboard/analyses/${lastSuccess.id}`}>View latest analysis</Link>
+                    <input
+                      ref={inputRef}
+                      type="file"
+                      multiple
+                      accept={ACCEPTED.join(",")}
+                      className="sr-only"
+                      onChange={(event) => {
+                        addFiles(event.target.files)
+                        event.target.value = ""
+                      }}
+                    />
+                    <span className="text-xs text-muted-foreground">PDF · DOCX · TXT — up to 25 MB each</span>
+                  </label>
+                </CardContent>
+              </Card>
+
+              {files.length > 0 ? (
+                <Card>
+                  <CardHeader className="flex-row items-center justify-between">
+                    <CardTitle>Selected files ({files.length})</CardTitle>
+                    <Button variant="ghost" size="sm" onClick={clearAll} disabled={uploading}>
+                      Clear all
                     </Button>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2">
+                    {files.map((item) => {
+                      const percent = fileProgress[item.id]
+                      const result = results.find((entry) => entry.id === item.id)
+                      const isActive = uploading && activeId === item.id && result === undefined
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2.5"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                              <FileText className="size-4 text-muted-foreground" aria-hidden="true" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium">{item.file.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatSize(item.file.size)}
+                                {isActive && percent !== undefined ? ` · uploading ${percent}%` : ""}
+                                {result?.status === "ok" ? " · analyzed" : ""}
+                                {result?.status === "duplicate" ? " · duplicate" : ""}
+                                {result?.status === "error" ? " · failed" : ""}
+                              </p>
+                            </div>
+                            {isActive ? (
+                              <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden="true" />
+                            ) : result?.status === "ok" ? (
+                              <CheckCircle2 className="size-4 shrink-0 text-emerald-500" aria-hidden="true" />
+                            ) : result ? (
+                              <AlertTriangle className="size-4 shrink-0 text-amber-500" aria-hidden="true" />
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={`Remove ${item.file.name}`}
+                                onClick={() => removeFile(item.id)}
+                                disabled={uploading}
+                              >
+                                <Trash2 className="size-4" aria-hidden="true" />
+                              </Button>
+                            )}
+                          </div>
+                          {isActive ? <Progress value={percent ?? 0} /> : null}
+                        </div>
+                      )
+                    })}
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {hasInvalid ? (
+                <Card>
+                  <CardHeader className="flex-row items-center justify-between">
+                    <CardTitle>Rejected files ({invalidFiles.length})</CardTitle>
+                    <Button variant="ghost" size="sm" onClick={() => setInvalidFiles([])}>
+                      Dismiss
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2">
+                    {invalidFiles.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2.5"
+                      >
+                        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">{item.reason}</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Dismiss ${item.name}`}
+                          onClick={() => removeInvalid(item.id)}
+                        >
+                          <X className="size-4" aria-hidden="true" />
+                        </Button>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {hasResults ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Results</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-2">
+                    {results.map((result) => (
+                      <div key={result.id} className="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+                        {result.status === "ok" ? (
+                          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" aria-hidden="true" />
+                        ) : result.status === "duplicate" ? (
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
+                        ) : (
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{result.filename}</p>
+                          <p className="text-xs text-muted-foreground">{result.message}</p>
+                          {renderIssueActions(result)}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
+            </>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
@@ -434,27 +581,36 @@ export function UploadPage() {
                 </div>
               ) : null}
 
-              <div className="flex flex-col gap-2 border-t border-border pt-4">
-                <Button onClick={() => void analyze()} disabled={files.length === 0 || uploading}>
-                  {uploading ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                      Analyzing…
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="size-4" aria-hidden="true" />
-                      Upload &amp; analyze
-                    </>
-                  )}
-                </Button>
-                {hasResults && !uploading ? (
-                  <Button variant="ghost" size="sm" onClick={() => setResults([])}>
-                    <X className="size-4" aria-hidden="true" />
-                    Clear results
+              {!showResults ? (
+                <div className="flex flex-col gap-2 border-t border-border pt-4">
+                  <Button onClick={() => void analyze()} disabled={files.length === 0 || uploading}>
+                    {uploading ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        Analyzing…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="size-4" aria-hidden="true" />
+                        Upload &amp; analyze
+                      </>
+                    )}
                   </Button>
-                ) : null}
-              </div>
+                  {hasResults && !uploading ? (
+                    <Button variant="ghost" size="sm" onClick={() => setResults([])}>
+                      <X className="size-4" aria-hidden="true" />
+                      Clear results
+                    </Button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 border-t border-border pt-4">
+                  <Button variant="outline" onClick={resetAll}>
+                    <FileText aria-hidden="true" />
+                    Analyze another document
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 

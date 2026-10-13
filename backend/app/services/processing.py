@@ -112,6 +112,62 @@ def _prepare_retry(
     document.status = "PROCESSING"
 
 
+def delete_document(db: Session, document: Document) -> None:
+    """Permanently remove a document, its results and its stored upload.
+
+    Findings, analyses and clauses are removed explicitly (SQLite does not
+    enforce ``ON DELETE CASCADE`` by default), then the row itself is deleted.
+    The stored file is only removed when it lives inside the managed upload
+    directory.
+    """
+
+    storage_path = document.storage_path
+    _clear_results(db, document, keep_clauses=False)
+    db.delete(document)
+    db.commit()
+    delete_upload(storage_path)
+
+
+def delete_all_documents(db: Session, user_id: int) -> int:
+    """Permanently remove every document owned by ``user_id``.
+
+    Deletion is scoped to the owning user so no other account's data is ever
+    touched. Findings, analyses and clauses are removed explicitly, all rows
+    are committed in a single transaction, and the documents' stored files are
+    removed afterwards (only those inside the managed upload directory). The
+    number of deleted documents is returned.
+    """
+
+    documents = list(
+        db.scalars(select(Document).where(Document.user_id == user_id)).all()
+    )
+    if not documents:
+        return 0
+
+    storage_paths = [
+        document.storage_path for document in documents if document.storage_path
+    ]
+    for document in documents:
+        _clear_results(db, document, keep_clauses=False)
+        db.delete(document)
+    db.commit()
+
+    for storage_path in storage_paths:
+        delete_upload(storage_path)
+    return len(documents)
+
+
+def _latest_completed_analysis(document: Document) -> Analysis | None:
+    """Return the most recent COMPLETED analysis for ``document``, if any."""
+
+    completed = [
+        analysis for analysis in document.analyses if analysis.status == "COMPLETED"
+    ]
+    if not completed:
+        return None
+    return max(completed, key=lambda analysis: (analysis.created_at, analysis.id))
+
+
 def _finalize_failed(db: Session, document_id: int, message: str) -> None:
     db.rollback()
     document = db.get(Document, document_id)
@@ -356,8 +412,19 @@ def process_upload(
     content_type: str | None,
     title: str | None,
     max_size_bytes: int,
+    force: bool = False,
 ) -> Document:
-    """Entry point used by the upload endpoint."""
+    """Entry point used by the upload endpoint.
+
+    When an identical document already exists (matched by content hash) a new
+    row is never created. Behaviour depends on the caller:
+
+    * ``force=True`` (or a document whose previous run failed / never produced a
+      completed analysis) re-analyzes the existing record in place.
+    * an already-analyzed document is reported back as a conflict that carries
+      the ``document_id`` and ``analysis_id`` so the client can offer to open
+      the existing analysis or re-run it.
+    """
 
     recover_stale_documents(db, stale_seconds=settings.processing_stale_seconds)
 
@@ -369,32 +436,51 @@ def process_upload(
         select(Document).where(Document.content_hash == content_hash)
     )
     if existing is not None:
-        if existing.user_id == user.id:
-            details = {"document_id": existing.id, "title": existing.title}
-        else:
-            details = None
-        if existing.status == "PROCESSED":
-            raise ConflictError(
-                "This document has already been uploaded.",
-                code="duplicate_document",
-                details=details,
-            )
+        same_owner = existing.user_id == user.id
+        completed = _latest_completed_analysis(existing)
+        details = (
+            {
+                "document_id": existing.id,
+                "analysis_id": completed.id if completed else None,
+                "title": existing.title,
+                "filename": existing.filename,
+                "status": existing.status,
+            }
+            if same_owner
+            else None
+        )
         if existing.status == "PROCESSING":
             raise ConflictError(
                 "This document is already being processed.",
                 code="duplicate_document",
                 details=details,
             )
-        # A FAILED document is retried in place to avoid duplicate records.
-        document = existing
-        _prepare_retry(
-            db,
-            document,
-            title=document_title,
-            filename=filename,
-            content_type=content_type,
-            file_type=file_type,
-        )
+        if same_owner and (force or completed is None):
+            # Re-analyze in place when explicitly requested, after a previous
+            # failure, or when the stored record never produced a completed
+            # analysis. This is what lets a re-uploaded PDF be analyzed again.
+            document = existing
+            _prepare_retry(
+                db,
+                document,
+                title=document_title,
+                filename=filename,
+                content_type=content_type,
+                file_type=file_type,
+            )
+        elif same_owner:
+            raise ConflictError(
+                "This document has already been analyzed.",
+                code="duplicate_document",
+                details=details,
+            )
+        else:
+            # Another user's identical document: never touch or expose it.
+            raise ConflictError(
+                "This document has already been uploaded.",
+                code="duplicate_document",
+                details=None,
+            )
     else:
         document = Document(
             user_id=user.id,
@@ -421,6 +507,8 @@ def process_upload(
 
 
 __all__ = [
+    "delete_all_documents",
+    "delete_document",
     "persist_clauses",
     "process_upload",
     "recover_stale_documents",

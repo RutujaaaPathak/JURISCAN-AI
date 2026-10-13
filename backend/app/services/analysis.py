@@ -30,6 +30,7 @@ class Rule:
     citation: str | None
     patterns: tuple[Pattern[str], ...]
     exclude: tuple[Pattern[str], ...] = ()
+    document_level: bool = False
 
 
 def _c(pattern: str) -> Pattern[str]:
@@ -51,7 +52,13 @@ RULES: tuple[Rule, ...] = (
             "exclude indirect losses and carve out the counterparty's own negligence."
         ),
         citation="Unfair Contract Terms Act 1977; standard market practice.",
-        patterns=(_c(r"indemnif"), _c(r"hold\s+harmless")),
+        # Only flag an actual indemnity *obligation*, not procedural references to
+        # an "indemnified party" or a bare mention of the word "indemnity".
+        patterns=(
+            _c(r"(?:shall|will|must|agrees?\s+to|undertakes?\s+to|to)\s+indemnif"),
+            _c(r"indemnif\w*\s+(?:and\s+)?hold\s+harmless"),
+            _c(r"hold\s+harmless"),
+        ),
         exclude=(
             _c(r"(?:liabilit|indemnit)\w*\s+[^.]{0,30}\bcap(?:ped|s)?\b"),
             _c(r"\bcap(?:ped)?\s+(?:at|to)\b"),
@@ -59,6 +66,10 @@ RULES: tuple[Rule, ...] = (
             _c(r"aggregate\s+liability"),
             _c(r"\blimited\s+to\b"),
             _c(r"shall\s+not\s+exceed"),
+            # A mutual indemnity scoped to each party's own breach is standard
+            # drafting, not an uncapped one-sided exposure.
+            _c(r"to\s+the\s+extent\s+(?:arising|of|caused|that)"),
+            _c(r"resulting\s+from\s+(?:that|the|its|their)\s+[\w' ]{0,30}\bbreach"),
         ),
     ),
     Rule(
@@ -75,14 +86,39 @@ RULES: tuple[Rule, ...] = (
         patterns=(
             _c(r"unlimited\s+liability"),
             _c(r"liability\s+shall\s+be\s+unlimited"),
+            _c(r"liabilit\w*\b[^.]{0,80}\bis\s+unlimited"),
             _c(r"no\s+limit\s+.{0,20}liabilit"),
             _c(r"shall\s+not\s+be\s+(limited|excluded)"),
         ),
     ),
     Rule(
+        code="UNFAIR_LIABILITY_EXCLUSION",
+        category="Limitation of Liability",
+        severity="CRITICAL",
+        title="Exclusion of liability for death or personal injury",
+        description=(
+            "One party excludes all of its liability, including for death or "
+            "personal injury, which is normally void and leaves the counterparty "
+            "without a meaningful remedy."
+        ),
+        recommendation=(
+            "Remove the exclusion for death or personal injury caused by "
+            "negligence and for other liability that cannot lawfully be excluded."
+        ),
+        citation="Unfair Contract Terms Act 1977 s.2; Consumer Rights Act 2015 s.65.",
+        patterns=(
+            _c(r"excludes?\s+(?:all|any)\s+liability[^.]{0,120}(?:death|personal\s+injury)"),
+            _c(r"(?:no|excludes?)\s+liability[^.]{0,60}(?:death|personal\s+injury)"),
+        ),
+        exclude=(
+            _c(r"nothing\s+in\s+this\s+agreement"),
+            _c(r"cannot\s+lawfully\s+be\s+limited"),
+        ),
+    ),
+    Rule(
         code="TERMINATION_FOR_CONVENIENCE",
         category="Termination",
-        severity="HIGH",
+        severity="MEDIUM",
         title="Termination for convenience",
         description=(
             "One party may terminate without cause, which can interrupt delivery "
@@ -118,8 +154,11 @@ RULES: tuple[Rule, ...] = (
         recommendation="Reduce to 30 days and add interest for late payment where lawful.",
         citation="Late Payment of Commercial Debts (Interest) Act 1998.",
         patterns=(
-            _c(r"(sixty \(60\)|\b60\b|ninety \(90\)|\b90\b|one hundred and twenty \(120\)|\b120\b)\s*days?.{0,20}(invoice|payment|receipt)"),
-            _c(r"within\s+(60|90|120)\s+days"),
+            # The long window must be tied to payment context so that unrelated
+            # windows (for example a "60 days to report a statement error") do
+            # not read as payment terms.
+            _c(r"(?:sixty|ninety|one\s+hundred\s+and\s+twenty|\b60\b|\b90\b|\b120\b)[^.\n]{0,25}?days?[^.\n]{0,40}?(?:invoice|payment|payable|paid|pay\b|remuneration|receipt)"),
+            _c(r"within\s+(?:sixty\s*\(60\)|ninety\s*\(90\)|one\s+hundred\s+and\s+twenty\s*\(120\)|\b60\b|\b90\b|\b120\b)\s*days?[^.\n]{0,40}?(?:invoice|payment|payable|paid|pay\b|remuneration|receipt)"),
         ),
     ),
     Rule(
@@ -182,6 +221,28 @@ RULES: tuple[Rule, ...] = (
         patterns=(_c(r"liquidated\s+damages"), _c(r"penalt(y|ies)"), _c(r"break\s+fee")),
     ),
     Rule(
+        code="DEEMED_PERFORMANCE",
+        category="Remedies",
+        severity="HIGH",
+        title="Obligation treated as performed without delivery",
+        description=(
+            "The clause deems an obligation (such as return of a deposit) satisfied "
+            "without the benefit actually being provided, and may remove the "
+            "counterparty's remaining rights and any requirement to give notice."
+        ),
+        recommendation=(
+            "Delete the deeming language and require actual return or performance, "
+            "with express written consent and notice before any substitution."
+        ),
+        citation="Consumer protection and unfair terms principles.",
+        patterns=(
+            _c(r"shall\s+be\s+deemed\s+(?:returned|paid|satisfied|performed|complied|discharged)"),
+            _c(r"deemed\s+to\s+have\s+been\s+(?:returned|paid|satisfied|performed|complied|discharged)"),
+            _c(r"deemed\s+(?:returned|paid|satisfied|performed|complied|discharged)"),
+            _c(r"shall\s+have\s+no\s+further\s+obligation"),
+        ),
+    ),
+    Rule(
         code="DATA_PROTECTION_GAP",
         category="Data Protection",
         severity="MEDIUM",
@@ -194,6 +255,7 @@ RULES: tuple[Rule, ...] = (
         citation="UK GDPR Article 28; Data Protection Act 2018.",
         patterns=(_c(r"personal\s+data"), _c(r"data\s+protection"), _c(r"\bgdpr\b")),
         exclude=(_c(r"article\s+28"), _c(r"sub-?processor"), _c(r"data\s+processing\s+agreement")),
+        document_level=True,
     ),
     Rule(
         code="PERPETUAL_CONFIDENTIALITY",
@@ -227,49 +289,47 @@ RULES: tuple[Rule, ...] = (
         description="An exclusivity obligation may restrict commercial flexibility.",
         recommendation="Confirm scope, duration and any minimum volumes or carve-outs.",
         citation=None,
-        patterns=(_c(r"exclusiv"),),
+        patterns=(
+            _c(r"\bexclusive\s+(?:basis|right|arrangement|supplier|distributor|appointment|territory|licen[cs]e|supply|dealing|services?)\b"),
+            _c(r"\bsole\s+and\s+exclusive\b"),
+            _c(r"\bexclusivity\b"),
+        ),
+        exclude=(
+            _c(r"non[-\s]?exclusive"),
+            _c(r"exclusive\s+of\b"),
+        ),
     ),
     Rule(
-        code="ARBITRATION",
+        code="ONE_SIDED_ARBITRATION",
         category="Dispute Resolution",
-        severity="LOW",
-        title="Arbitration clause",
-        description="Disputes are resolved by arbitration. Review the seat, rules and cost allocation.",
-        recommendation="Confirm the institution, seat and number of arbitrators are acceptable.",
+        severity="MEDIUM",
+        title="One-sided arbitration terms",
+        description=(
+            "Dispute resolution is weighted in favour of one party (for example the "
+            "arbitrator or venue is chosen by that party alone, court access is "
+            "waived, or the other party bears all costs regardless of outcome)."
+        ),
+        recommendation="Use a neutral seat and appointment process and let costs follow the outcome.",
         citation=None,
-        patterns=(_c(r"arbitrat"),),
-    ),
-    Rule(
-        code="CONFIDENTIALITY_STANDARD",
-        category="Confidentiality",
-        severity="LOW",
-        title="Confidentiality obligation",
-        description="Confidentiality obligations are present and should be reviewed for balance and carve-outs.",
-        recommendation="Confirm mutual scope, permitted disclosures and the survival period.",
-        citation=None,
-        patterns=(_c(r"confidential\s+information"),),
-    ),
-    Rule(
-        code="ASSIGNMENT_RESTRICTION",
-        category="Assignment",
-        severity="LOW",
-        title="Assignment restriction",
-        description="Assignment of the agreement is restricted, which may affect corporate transactions.",
-        recommendation="Confirm the restriction allows assignment to affiliates or on a change of control.",
-        citation=None,
-        patterns=(_c(r"shall\s+not\s+assign"), _c(r"not\s+assign\s+this\s+agreement")),
-    ),
-    Rule(
-        code="FORCE_MAJEURE",
-        category="Force Majeure",
-        severity="LOW",
-        title="Force majeure provision",
-        description="A force majeure clause is present. Review the covered events and notice requirements.",
-        recommendation="Confirm the events covered and that notice and mitigation duties are reasonable.",
-        citation=None,
-        patterns=(_c(r"force\s+majeure"), _c(r"act\s+of\s+god")),
+        patterns=(
+            _c(r"arbitrat\w*[^.]{0,80}appointed\s+by\s+the\s+\w+(\s+\w+)?\s+alone"),
+            _c(r"venue\s+chosen\s+by\s+the\s+\w+"),
+            _c(r"waiv\w*[^.]{0,40}right\s+to\s+approach\s+any\s+court"),
+            _c(r"bear\s+all\s+costs\s+of\s+the\s+arbitration[^.]{0,80}regardless\s+of\s+the\s+outcome"),
+        ),
     ),
 )
+
+
+# Presence-only "rules" that were retired from live analysis (they flagged
+# ordinary, standard clauses). Kept here only so previously stored findings can
+# still be categorised on the overview dashboard instead of showing as "Other".
+LEGACY_RULE_CATEGORIES: dict[str, str] = {
+    "ARBITRATION": "Dispute Resolution",
+    "CONFIDENTIALITY_STANDARD": "Confidentiality",
+    "ASSIGNMENT_RESTRICTION": "Assignment",
+    "FORCE_MAJEURE": "Force Majeure",
+}
 
 
 CLAUSE_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -324,6 +384,64 @@ def _highest_severity(severities: list[str]) -> str | None:
     return max(severities, key=lambda severity: SEVERITY_ORDER.get(severity, 0))
 
 
+_HEADING_LIKE = re.compile(r"[a-z]")
+_PERSONAL_DATA = re.compile(r"personal\s+data|data\s+protection|\bgdpr\b", re.IGNORECASE)
+_DATA_PROTECTION_SAFEGUARDS = re.compile(
+    r"article\s+28|sub-?processor|data\s+processing\s+agreement|"
+    r"documented\s+instructions|breach|72\s+hours",
+    re.IGNORECASE,
+)
+
+
+def _is_heading_like(text: str) -> bool:
+    """True for a clause that is only a heading (for example "8. DATA PROTECTION").
+
+    Headings carry no operative wording, so matching risk keywords against them
+    produces false positives (for example a bare "PENALTIES" title).
+    """
+
+    return _HEADING_LIKE.search(text) is None
+
+
+def _data_protection_finding(
+    segments: list[Segment], rule: Rule
+) -> FindingDraft | None:
+    """Fire the data-protection rule at most once per document.
+
+    Personal data may be mentioned in several clauses, each well drafted in
+    isolation. The real gap only exists when the document as a whole references
+    personal data but omits the mandatory processor safeguards. When a gap is
+    found it is attached to the first substantive clause that mentions data.
+    """
+
+    mentions = [
+        index
+        for index, segment in enumerate(segments)
+        if _PERSONAL_DATA.search(segment.text)
+    ]
+    if not mentions:
+        return None
+
+    document_text = "\n".join(segment.text for segment in segments)
+    if _DATA_PROTECTION_SAFEGUARDS.search(document_text):
+        return None
+
+    anchor = next(
+        (index for index in mentions if not _is_heading_like(segments[index].text)),
+        mentions[0],
+    )
+    return FindingDraft(
+        segment_index=anchor,
+        rule_code=rule.code,
+        category=rule.category,
+        severity=rule.severity,
+        title=rule.title,
+        description=rule.description,
+        recommendation=rule.recommendation,
+        citation=rule.citation,
+    )
+
+
 def _score(findings: list[FindingDraft]) -> float:
     raw = sum(SEVERITY_WEIGHTS.get(finding.severity, 0) for finding in findings)
     return float(min(100, raw))
@@ -345,15 +463,18 @@ def _summary(findings: list[FindingDraft], clause_count: int, risk_score: float)
     if not findings:
         return (
             f"Rule-based analysis reviewed {clause_count} clause(s) and detected no "
-            f"risk indicators. Generated by {MODEL_NAME}; this is a deterministic "
-            f"baseline and not a legal opinion."
+            f"risk indicators. Legal safety 100/100 (no findings reduce the score). "
+            f"Generated by {MODEL_NAME}; this is a deterministic baseline and not a "
+            f"legal opinion."
         )
 
+    safety = round(max(0.0, 100.0 - risk_score), 1)
     return (
         f"Rule-based analysis reviewed {clause_count} clause(s) and detected "
         f"{len(findings)} risk indicator(s): {counts['CRITICAL']} critical, "
         f"{counts['HIGH']} high, {counts['MEDIUM']} medium, {counts['LOW']} low. "
-        f"Overall risk {int(risk_score)}/100 ({band}). Generated by {MODEL_NAME} "
+        f"Overall risk {int(risk_score)}/100 ({band}). Legal safety {safety}/100 "
+        f"(higher = lower detected risk). Generated by {MODEL_NAME} "
         f"(explainable rule-based baseline); no machine-learning model was used."
     )
 
@@ -365,9 +486,13 @@ def analyze_segments(segments: list[Segment]) -> AnalysisResult:
     clause_type_by_index: dict[int, str] = {}
     severities_by_index: dict[int, list[str]] = {}
 
+    per_segment_rules = tuple(rule for rule in RULES if not rule.document_level)
+
     for index, segment in enumerate(segments):
         clause_type_by_index[index] = _infer_clause_type(segment.text)
-        for rule in RULES:
+        if _is_heading_like(segment.text):
+            continue
+        for rule in per_segment_rules:
             if any(pattern.search(segment.text) for pattern in rule.patterns):
                 if rule.exclude and any(pattern.search(segment.text) for pattern in rule.exclude):
                     continue
@@ -384,6 +509,20 @@ def analyze_segments(segments: list[Segment]) -> AnalysisResult:
                     )
                 )
                 severities_by_index.setdefault(index, []).append(rule.severity)
+
+    for rule in RULES:
+        if not rule.document_level:
+            continue
+        finding = (
+            _data_protection_finding(segments, rule)
+            if rule.code == "DATA_PROTECTION_GAP"
+            else None
+        )
+        if finding is not None:
+            findings.append(finding)
+            severities_by_index.setdefault(finding.segment_index, []).append(
+                finding.severity
+            )
 
     risk_level_by_index: dict[int, str] = {}
     for index, severities in severities_by_index.items():
@@ -405,6 +544,7 @@ __all__ = [
     "AnalysisResult",
     "CLAUSE_TYPE_KEYWORDS",
     "FindingDraft",
+    "LEGACY_RULE_CATEGORIES",
     "MODEL_NAME",
     "RULES",
     "SEVERITY_ORDER",
