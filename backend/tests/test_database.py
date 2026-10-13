@@ -109,4 +109,5 @@ def test_all_tables_registered():
         "case_clarification_messages",
         "case_fee_proposals",
         "case_appointments",
+        "user_settings",
     }

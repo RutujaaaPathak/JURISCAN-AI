@@ -66,9 +66,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus("anonymous")
   }, [])
 
+  const refresh = useCallback(async () => {
+    if (!getAuthToken()) return
+    try {
+      const current = await fetchCurrentUser()
+      setUser(current)
+      setStatus("authenticated")
+    } catch {
+      // Keep the current session on a transient failure; a real expiry is
+      // handled when the token is next used or on the next mount.
+    }
+  }, [])
+
   const value = useMemo(
-    () => ({ user, status, login, register, logout }),
-    [user, status, login, register, logout],
+    () => ({ user, status, login, register, logout, refresh }),
+    [user, status, login, register, logout, refresh],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

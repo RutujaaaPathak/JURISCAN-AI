@@ -27,16 +27,16 @@ export function resolveTheme(theme: Theme): ResolvedTheme {
 }
 
 export function readStoredTheme(): Theme {
-  if (typeof window === "undefined") return "system"
+  if (typeof window === "undefined") return "dark"
   try {
     const stored = window.localStorage.getItem(THEME_STORAGE_KEY)
     if (stored === "light" || stored === "dark" || stored === "system") {
       return stored
     }
   } catch {
-    // localStorage can be unavailable (private mode); fall back to system.
+    // localStorage can be unavailable (private mode); fall back to dark.
   }
-  return "system"
+  return "dark"
 }
 
 export function applyTheme(resolved: ResolvedTheme) {

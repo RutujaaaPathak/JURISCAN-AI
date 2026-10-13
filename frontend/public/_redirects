@@ -1,0 +1,5 @@
+# SPA fallback so client-side routes (e.g. /dashboard, /privacy) resolve on
+# static hosts that honour Netlify/Cloudflare Pages redirects.
+# Vercel: add the equivalent rewrite in vercel.json.
+# nginx:  try_files $uri /index.html;
+/*    /index.html   200

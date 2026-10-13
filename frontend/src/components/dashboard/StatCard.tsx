@@ -19,7 +19,7 @@ export function StatCard({
   tone?: Tone
 }) {
   return (
-    <Card className="gap-3 p-4 transition-shadow hover:shadow-md">
+    <Card className="gap-3 p-5 transition-all hover:border-amber-400/25 hover:shadow-lg">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm text-muted-foreground">{label}</span>
         {Icon ? (

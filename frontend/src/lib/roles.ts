@@ -44,3 +44,21 @@ export const DEFAULT_ROLE: UserRole = "individual"
 export function isUserRole(value: string | null | undefined): value is UserRole {
   return value !== null && value !== undefined && value in ROLE_META
 }
+
+/**
+ * Canonical dashboard URL for a workspace role. The client / company / lawyer
+ * dashboards are distinct, role-protected routes; admin shares the default
+ * overview. Callers must only pass a role sourced from the authenticated user.
+ */
+export function dashboardPathForRole(role: UserRole): string {
+  switch (role) {
+    case "company":
+      return "/dashboard/company"
+    case "lawyer":
+      return "/dashboard/lawyer"
+    case "admin":
+      return "/dashboard"
+    default:
+      return "/dashboard/client"
+  }
+}

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { dashboardPathForRole } from "@/lib/roles"
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -21,16 +22,17 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const requested = (location.state as { from?: string } | null)?.from
   const redirectTo =
-    (location.state as { from?: string } | null)?.from ?? "/dashboard"
+    requested && requested.startsWith("/dashboard") ? requested : null
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      await login(email.trim(), password)
-      navigate(redirectTo, { replace: true })
+      const current = await login(email.trim(), password)
+      navigate(redirectTo ?? dashboardPathForRole(current.role), { replace: true })
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Could not sign you in.")
     } finally {
@@ -51,7 +53,7 @@ export function LoginPage() {
         </>
       }
     >
-      <Card>
+      <Card className="surface-panel rounded-2xl border border-white/10 shadow-2xl backdrop-blur-xl">
         <CardContent className="pt-6">
           <form className="flex flex-col gap-4" onSubmit={submit} noValidate>
             {error ? (
@@ -70,6 +72,7 @@ export function LoginPage() {
                 required
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
+                className="bg-background/60 border-white/10 focus-visible:border-primary"
               />
             </div>
 
@@ -82,10 +85,11 @@ export function LoginPage() {
                 required
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+                className="bg-background/60 border-white/10 focus-visible:border-primary"
               />
             </div>
 
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy} className="btn-gold-primary h-10 w-full mt-2 font-semibold">
               {busy ? "Signing in…" : "Sign in"}
             </Button>
           </form>

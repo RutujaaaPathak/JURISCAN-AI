@@ -46,8 +46,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                   cn(
                     "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/50",
                     isActive
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      ? "bg-primary/15 text-primary border border-primary/30 shadow-[0_0_15px_-3px_rgba(229,193,88,0.2)] font-semibold"
+                      : "text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground hover:border-white/5 border border-transparent",
                   )
                 }
               >
