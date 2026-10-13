@@ -62,6 +62,7 @@ class AnalysisRead(ORMModel, Timestamped):
     model_name: str
     status: str
     risk_score: float | None = None
+    safety_score: float | None = None
     summary: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -89,6 +90,7 @@ class DocumentSummary(ORMModel):
     model_name: str | None = None
     risk_score: float | None = None
     risk_level: str | None = None
+    safety_score: float | None = None
     finding_count: int = 0
     high_risk_count: int = 0
 
@@ -114,6 +116,10 @@ class DocumentDetail(DocumentSummary):
 class DocumentListResponse(BaseModel):
     items: list[DocumentSummary]
     total: int
+
+
+class DeleteAllResult(BaseModel):
+    deleted: int
 
 
 class CategoryCount(BaseModel):

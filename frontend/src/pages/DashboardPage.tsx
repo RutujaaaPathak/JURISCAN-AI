@@ -9,7 +9,7 @@ import {
   ShieldAlert,
   Upload,
 } from "lucide-react"
-import { useCallback } from "react"
+import { useCallback, useEffect } from "react"
 import { Link } from "react-router-dom"
 
 import { SeverityBadge, StatusBadge } from "@/components/analysis/RiskBadges"
@@ -32,7 +32,7 @@ import { useAsync } from "@/hooks/useAsync"
 import { useHealth } from "@/hooks/useHealth"
 import { useStatus } from "@/hooks/useStatus"
 import { API_BASE_URL } from "@/lib/api"
-import { getOverviewStats, listDocuments } from "@/lib/documents"
+import { DOCUMENTS_CHANGED_EVENT, getOverviewStats, listDocuments } from "@/lib/documents"
 import { formatDayLabel, formatFileType } from "@/lib/format"
 import type { RiskLevel } from "@/lib/risk"
 import { RISK_LEVELS, RISK_META, riskLevelFromScoreOrNull, toRiskLevel } from "@/lib/risk"
@@ -329,7 +329,16 @@ export function DashboardPage() {
   const statsLoader = useCallback(() => getOverviewStats(), [])
   const recentLoader = useCallback(() => listDocuments({ limit: 5 }), [])
   const { state: stats, refresh: refreshStats } = useAsync(statsLoader)
-  const { state: recent } = useAsync(recentLoader)
+  const { state: recent, refresh: refreshRecent } = useAsync(recentLoader)
+
+  useEffect(() => {
+    const handleDocumentsChanged = () => {
+      void refreshStats()
+      void refreshRecent()
+    }
+    window.addEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged)
+    return () => window.removeEventListener(DOCUMENTS_CHANGED_EVENT, handleDocumentsChanged)
+  }, [refreshStats, refreshRecent])
 
   const isEmpty = stats.phase === "ok" && stats.data !== null && stats.data.total_documents === 0
   const useDemo = isEmpty

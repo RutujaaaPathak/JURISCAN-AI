@@ -1,0 +1,19 @@
+# JurisScan-AI ML training/inference extras.
+#
+# NOT part of the backend runtime (backend/requirements.txt). Install only when
+# running scripts/validate_dataset.py, scripts/train_inlegalbert.py,
+# scripts/evaluate_inlegalbert.py or the app.ml inference wrappers:
+#
+#   pip install -r backend/requirements-ml.txt
+#
+# Core stack used by the training pipeline:
+torch>=2.2
+transformers>=4.40
+scikit-learn>=1.4
+numpy>=1.26
+
+# Optional, if you later switch training to the Hugging Face Trainer:
+# datasets>=2.19
+# evaluate>=0.4
+# accelerate>=0.30
+# pandas>=2.0

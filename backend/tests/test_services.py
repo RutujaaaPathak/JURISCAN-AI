@@ -62,6 +62,120 @@ def test_rule_engine_reports_no_findings_for_benign_text():
     assert "no" in result.summary.lower()
 
 
+def _codes(text: str) -> set[str]:
+    return {finding.rule_code for finding in analyze_segments(segment_clauses(text)).findings}
+
+
+def test_exclusivity_ignores_ordinary_exclusive_phrasing():
+    assert "EXCLUSIVITY" not in _codes(
+        "1. Fees\nThe fee is exclusive of applicable taxes."
+    )
+    assert "EXCLUSIVITY" not in _codes(
+        "2. Licence\nThe Provider grants a non-exclusive, perpetual licence."
+    )
+    assert "EXCLUSIVITY" not in _codes(
+        "3. Disputes\nDisputes are resolved exclusively by arbitration."
+    )
+    assert "EXCLUSIVITY" in _codes(
+        "4. Appointment\nThe Supplier is appointed on an exclusive basis to supply the Goods."
+    )
+
+
+def test_extended_payment_terms_requires_payment_context():
+    assert "EXTENDED_PAYMENT_TERMS" not in _codes(
+        "1. Statements\nThe Customer should notify the Company of any apparent error within 60 days of issue."
+    )
+    assert "EXTENDED_PAYMENT_TERMS" in _codes(
+        "2. Payment\nPayment shall be due within ninety (90) days of a valid invoice."
+    )
+
+
+def test_uncapped_indemnity_requires_an_obligation():
+    procedural = (
+        "1. Indemnity\nThe indemnified Party shall give prompt notice of the claim "
+        "and allow the indemnifying Party to control its defence."
+    )
+    fault_scoped = (
+        "2. Indemnity\nEach Party shall indemnify the other against third-party claims "
+        "to the extent arising from that Party's breach of this Agreement."
+    )
+    genuine = (
+        "3. Indemnity\nThe Customer shall indemnify the Supplier on demand and without "
+        "limit against all claims, losses, costs and expenses."
+    )
+    assert "UNCAPPED_INDEMNITY" not in _codes(procedural)
+    assert "UNCAPPED_INDEMNITY" not in _codes(fault_scoped)
+    assert "UNCAPPED_INDEMNITY" in _codes(genuine)
+
+
+def test_heading_only_segments_do_not_trigger_rules():
+    text = (
+        "1. CUSTOMER OBLIGATIONS AND PENALTIES\n"
+        "2. Indemnity\nThe Supplier shall indemnify the Customer for all losses without any cap."
+    )
+    segments = segment_clauses(text)
+    result = analyze_segments(segments)
+    assert len(segments) == 2
+    assert all(finding.segment_index != 0 for finding in result.findings)
+    assert any(
+        finding.segment_index == 1 and finding.rule_code == "UNCAPPED_INDEMNITY"
+        for finding in result.findings
+    )
+
+
+def test_data_protection_gap_fires_once_and_only_without_safeguards():
+    gap = (
+        "1. Privacy\nWe may share your personal data with selected partners.\n"
+        "2. Payment\nFees are payable within 30 days."
+    )
+    covered = (
+        "1. Privacy\nWe process personal data only on the Client's documented "
+        "instructions and will report any breach within 72 hours.\n"
+        "2. Payment\nFees are payable within 30 days."
+    )
+    gap_findings = [
+        f for f in analyze_segments(segment_clauses(gap)).findings
+        if f.rule_code == "DATA_PROTECTION_GAP"
+    ]
+    assert len(gap_findings) == 1
+    assert "DATA_PROTECTION_GAP" not in _codes(covered)
+
+
+def test_deemed_performance_flags_obligation_treated_as_discharged():
+    deceptive = (
+        "1. Deposit\nUpon reallocation the deposit shall be deemed returned to the "
+        "Customer and the Company shall have no further obligation in respect of it."
+    )
+    assert "DEEMED_PERFORMANCE" in _codes(deceptive)
+
+
+def test_one_sided_arbitration_flags_supplier_favoured_terms():
+    one_sided = (
+        "1. Disputes\nAny dispute shall be resolved by arbitration before a sole "
+        "arbitrator appointed by the Supplier alone."
+    )
+    neutral = (
+        "2. Disputes\nThe dispute may be referred to binding arbitration by a sole "
+        "arbitrator agreed by the Parties."
+    )
+    assert "ONE_SIDED_ARBITRATION" in _codes(one_sided)
+    assert "ONE_SIDED_ARBITRATION" not in _codes(neutral)
+
+
+def test_unfair_liability_exclusion_ignores_statutory_carve_outs():
+    carve_out = (
+        "1. Liability\nNothing in this Agreement limits or excludes liability for "
+        "fraud, death or personal injury caused by negligence, or any liability that "
+        "cannot lawfully be limited."
+    )
+    exclusion = (
+        "2. Liability\nThe Supplier excludes all liability to the Customer for any "
+        "loss, including death or personal injury."
+    )
+    assert "UNFAIR_LIABILITY_EXCLUSION" not in _codes(carve_out)
+    assert "UNFAIR_LIABILITY_EXCLUSION" in _codes(exclusion)
+
+
 def test_extraction_rejects_unsupported_extension():
     with pytest.raises(ValidationFailed) as exc:
         validate_and_extract(b"some content", "file.rtf", "application/rtf")

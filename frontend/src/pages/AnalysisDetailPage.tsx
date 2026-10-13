@@ -1,10 +1,12 @@
 import {
   ArrowLeft,
   Calendar,
+  Download,
   FileText,
   Globe2,
   Info,
   ListChecks,
+  Loader2,
   ScrollText,
   ShieldAlert,
   TextSearch,
@@ -22,8 +24,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useToast } from "@/components/ui/toast"
 import { useAsync } from "@/hooks/useAsync"
-import { getDocument } from "@/lib/documents"
+import { downloadAnalysisReport, downloadBlob, getDocument } from "@/lib/documents"
+import { ApiError } from "@/lib/api"
 import { formatDateTime, formatFileType } from "@/lib/format"
 import { RISK_LEVELS, RISK_META, riskLevelFromScoreOrNull, toRiskLevel } from "@/lib/risk"
 import type { DocumentDetail } from "@/lib/types"
@@ -34,6 +38,30 @@ function DetailBody({ doc }: { doc: DocumentDetail }) {
   const [focusClause, setFocusClause] = useState<{ id: number; nonce: number } | null>(
     null,
   )
+  const [exporting, setExporting] = useState(false)
+  const { toast } = useToast()
+
+  const handleExport = useCallback(async () => {
+    setExporting(true)
+    try {
+      const blob = await downloadAnalysisReport(doc.id)
+      downloadBlob(blob, `juriscan-analysis-${doc.id}.pdf`)
+      toast({
+        title: "Report downloaded",
+        description: "The PDF analysis report was saved to your downloads.",
+        variant: "success",
+      })
+    } catch (error) {
+      toast({
+        title: "Could not export report",
+        description: error instanceof ApiError ? error.message : "Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setExporting(false)
+    }
+  }, [doc.id, toast])
+
   const viewClauseInText = useCallback((clauseId?: number | null) => {
     if (clauseId === null || clauseId === undefined) return
     setTab("text")
@@ -99,7 +127,12 @@ function DetailBody({ doc }: { doc: DocumentDetail }) {
             <span className="font-mono text-xs text-muted-foreground">#{doc.id}</span>
           </div>
         </div>
-        <Button variant="outline" size="sm" disabled title="Report export is not implemented yet">
+        <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={exporting}>
+          {exporting ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="size-4" aria-hidden="true" />
+          )}
           Export report
         </Button>
       </div>
@@ -114,34 +147,50 @@ function DetailBody({ doc }: { doc: DocumentDetail }) {
         <div className="flex min-w-0 flex-col gap-6">
           <Card>
             <CardContent className="grid gap-6 sm:grid-cols-[auto_1fr] sm:items-center">
-              <RiskScore score={Math.round(doc.risk_score ?? 0)} />
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">Findings</p>
-                  <p className="text-xl font-semibold">{findings.length}</p>
+              <RiskScore
+                score={Math.round(doc.safety_score ?? (doc.risk_score !== null ? 100 - doc.risk_score : 0))}
+                level={level}
+                label="Legal safety score"
+              />
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Overall risk level</span>
+                  {level ? <SeverityBadge level={level} /> : <Badge variant="outline">Not analyzed</Badge>}
                 </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Critical / High</p>
-                  <p className="text-xl font-semibold">
-                    {(severityCounts.CRITICAL ?? 0) + (severityCounts.HIGH ?? 0)}
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Findings</p>
+                    <p className="text-xl font-semibold">{findings.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Critical / High</p>
+                    <p className="text-xl font-semibold">
+                      {(severityCounts.CRITICAL ?? 0) + (severityCounts.HIGH ?? 0)}
+                    </p>
+                  </div>
+                  <div className="col-span-2 flex flex-wrap gap-2">
+                    {RISK_LEVELS.map((risk) => (
+                      <div
+                        key={risk}
+                        className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs"
+                      >
+                        <span
+                          className="size-1.5 rounded-full"
+                          style={{ backgroundColor: RISK_META[risk].hex }}
+                          aria-hidden="true"
+                        />
+                        {RISK_META[risk].label}
+                        <span className="font-medium">{severityCounts[risk.toUpperCase()] ?? 0}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="col-span-2 flex flex-wrap gap-2">
-                  {RISK_LEVELS.map((risk) => (
-                    <div
-                      key={risk}
-                      className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs"
-                    >
-                      <span
-                        className="size-1.5 rounded-full"
-                        style={{ backgroundColor: RISK_META[risk].hex }}
-                        aria-hidden="true"
-                      />
-                      {RISK_META[risk].label}
-                      <span className="font-medium">{severityCounts[risk.toUpperCase()] ?? 0}</span>
-                    </div>
-                  ))}
-                </div>
+                <p className="border-t border-border pt-3 text-xs text-muted-foreground">
+                  Legal safety scores how clean the contract looks: 100 = no risk indicators detected.
+                  Every finding subtracts its severity weight (LOW −4, MEDIUM −10, HIGH −20, CRITICAL −35),
+                  floored at 0. It is the inverse of the rule-based risk score and a screening aid — not a
+                  legal opinion.
+                </p>
               </div>
             </CardContent>
           </Card>

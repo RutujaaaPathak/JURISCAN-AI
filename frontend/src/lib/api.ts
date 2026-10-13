@@ -118,6 +118,8 @@ export const api = {
   get: <T>(path: string, init?: RequestInit) => request<T>(path, { ...init, method: "GET" }),
   post: <T>(path: string, body?: unknown, init?: RequestInit) =>
     request<T>(path, { ...init, method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  delete: <T = void>(path: string, init?: RequestInit) =>
+    request<T>(path, { ...init, method: "DELETE" }),
   upload: <T>(path: string, formData: FormData, init?: UploadOptions) =>
     uploadRequest<T>(path, formData, init),
 }

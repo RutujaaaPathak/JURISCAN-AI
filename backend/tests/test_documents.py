@@ -550,3 +550,205 @@ def test_scanned_pdf_detail_exposes_ocr_text_and_page(client):
     assert detail["text_content"]
     assert "indemn" in detail["text_content"].lower()
     assert [page["page_number"] for page in detail["pages"]] == [1]
+
+
+def test_download_analysis_report_is_a_real_pdf_with_analysis_data(client):
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    created = _upload_txt(client, title="Report Test Contract").json()
+    report = client.get(f"/api/documents/{created['id']}/report")
+
+    assert report.status_code == 200
+    assert report.headers["content-type"] == "application/pdf"
+    assert (
+        report.headers.get("content-disposition", "").startswith("attachment;")
+    )
+    assert report.content.startswith(b"%PDF")
+
+    reader = PdfReader(BytesIO(report.content))
+    assert len(reader.pages) >= 1
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    assert "Report Test Contract" in text
+    assert "Legal safety" in text
+    assert "Overall assessment" in text
+    assert "Issues to review" in text
+    assert "UNCAPPED_INDEMNITY" in text or "indemnify" in text.lower()
+    assert "not a legal opinion" in text
+
+
+def test_download_analysis_report_not_available_before_processing(client):
+    resp = client.post(
+        "/api/documents",
+        files={"file": ("broken.pdf", b"not really a pdf body", "application/pdf")},
+    )
+    assert resp.status_code == 422
+
+    listing = client.get("/api/documents").json()
+    document_id = listing["items"][0]["id"]
+    report = client.get(f"/api/documents/{document_id}/report")
+
+    assert report.status_code == 422
+    assert report.json()["error"]["code"] == "report_not_available"
+
+
+def test_delete_document_removes_row_results_and_stored_file(client):
+    from pathlib import Path
+
+    from sqlalchemy import func, select
+
+    from app.core.database import SessionLocal
+    from app.models import Analysis, Clause, Document, RiskFinding
+
+    created = _upload_txt(client, title="Delete Me", filename="delete-me.txt").json()
+    document_id = created["id"]
+
+    with SessionLocal() as db:
+        document = db.get(Document, document_id)
+        assert document is not None
+        stored_path = Path(document.storage_path)
+        assert stored_path.is_file()
+        analysis_ids = [analysis.id for analysis in document.analyses]
+        assert analysis_ids
+
+    resp = client.delete(f"/api/documents/{document_id}")
+    assert resp.status_code == 204, resp.text
+    assert resp.content == b""
+
+    assert client.get(f"/api/documents/{document_id}").status_code == 404
+    listing = client.get("/api/documents").json()
+    assert all(item["id"] != document_id for item in listing["items"])
+    assert not stored_path.exists()
+
+    with SessionLocal() as db:
+        assert db.get(Document, document_id) is None
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(Analysis)
+                .where(Analysis.document_id == document_id)
+            )
+            == 0
+        )
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(Clause)
+                .where(Clause.document_id == document_id)
+            )
+            == 0
+        )
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(RiskFinding)
+                .where(RiskFinding.analysis_id.in_(analysis_ids))
+            )
+            == 0
+        )
+
+
+def test_delete_missing_document_returns_404(client):
+    resp = client.delete("/api/documents/999999")
+
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "document_not_found"
+
+
+def test_delete_document_updates_overview_stats(client):
+    created = _upload_txt(client, title="Stats Delete", filename="stats-delete.txt").json()
+
+    before = client.get("/api/stats/overview").json()
+    assert before["total_documents"] == 1
+    assert before["processed"] == 1
+
+    assert client.delete(f"/api/documents/{created['id']}").status_code == 204
+
+    after = client.get("/api/stats/overview").json()
+    assert after["total_documents"] == 0
+    assert after["processed"] == 0
+    assert after["high_risk_findings"] == 0
+    assert after["category_counts"] == []
+
+
+def test_delete_all_documents_removes_every_document_and_results(client):
+    from pathlib import Path
+
+    from sqlalchemy import func, select
+
+    from app.core.database import SessionLocal
+    from app.models import Analysis, Clause, Document, RiskFinding
+
+    first = _upload_txt(client, title="Bulk A", filename="bulk-a.txt").json()
+    second = _upload_txt(
+        client,
+        content=SAMPLE_CONTRACT + "\n5. Assignment\nThe Supplier may not assign this Agreement.",
+        title="Bulk B",
+        filename="bulk-b.txt",
+    ).json()
+
+    with SessionLocal() as db:
+        paths = [
+            Path(db.get(Document, first["id"]).storage_path),
+            Path(db.get(Document, second["id"]).storage_path),
+        ]
+        assert all(path.is_file() for path in paths)
+
+    resp = client.delete("/api/documents")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"deleted": 2}
+
+    listing = client.get("/api/documents").json()
+    assert listing["items"] == []
+    assert listing["total"] == 0
+    assert all(not path.exists() for path in paths)
+
+    stats = client.get("/api/stats/overview").json()
+    assert stats["total_documents"] == 0
+    assert stats["category_counts"] == []
+
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Document)) == 0
+        assert db.scalar(select(func.count()).select_from(Analysis)) == 0
+        assert db.scalar(select(func.count()).select_from(Clause)) == 0
+        assert db.scalar(select(func.count()).select_from(RiskFinding)) == 0
+
+
+def test_delete_all_on_empty_database_returns_zero(client):
+    resp = client.delete("/api/documents")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": 0}
+
+
+def test_delete_all_preserves_other_users_documents(client):
+    from app.core.database import SessionLocal
+    from app.models import Document, User
+
+    created = _upload_txt(client, title="Mine", filename="mine.txt").json()
+
+    with SessionLocal() as db:
+        other = User(email="other@example.com", username="other", full_name="Other")
+        db.add(other)
+        db.flush()
+        foreign = Document(
+            user_id=other.id,
+            title="Theirs",
+            filename="theirs.txt",
+            file_type="txt",
+            status="PROCESSED",
+            content_hash="foreign-hash",
+        )
+        db.add(foreign)
+        db.commit()
+        foreign_id = foreign.id
+
+    resp = client.delete("/api/documents")
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": 1}
+
+    with SessionLocal() as db:
+        assert db.get(Document, created["id"]) is None
+        assert db.get(Document, foreign_id) is not None

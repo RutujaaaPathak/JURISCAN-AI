@@ -20,6 +20,15 @@ export interface ApiErrorBody {
   }
 }
 
+/** Details attached to a ``duplicate_document`` error response. */
+export interface DuplicateDocumentDetails {
+  document_id?: number
+  analysis_id?: number | null
+  title?: string
+  filename?: string
+  status?: string
+}
+
 export interface DocumentSummary {
   id: number
   title: string
@@ -38,6 +47,7 @@ export interface DocumentSummary {
   model_name: string | null
   risk_score: number | null
   risk_level: string | null
+  safety_score: number | null
   finding_count: number
   high_risk_count: number
 }
@@ -80,6 +90,7 @@ export interface AnalysisRead {
   model_name: string
   status: string
   risk_score: number | null
+  safety_score: number | null
   summary: string | null
   started_at: string | null
   completed_at: string | null
@@ -104,6 +115,10 @@ export interface DocumentDetail extends DocumentSummary {
 export interface DocumentListResponse {
   items: DocumentSummary[]
   total: number
+}
+
+export interface DeleteAllResult {
+  deleted: number
 }
 
 export interface OverviewStats {
