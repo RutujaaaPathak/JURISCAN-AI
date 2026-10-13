@@ -1,17 +1,19 @@
 import {
   Activity,
-  AlertTriangle,
   ArrowRight,
-  CheckCircle2,
+  Bell,
+  Briefcase,
+  Building2,
+  CalendarClock,
   ClipboardList,
   Database,
   FileCheck2,
   FileText,
   Gauge,
   Gavel,
+  Inbox,
   MessageSquare,
   Server,
-  Settings,
   ShieldAlert,
   Upload,
 } from "lucide-react"
@@ -22,7 +24,6 @@ import { SeverityBadge, StatusBadge } from "@/components/analysis/RiskBadges"
 import { CategoryBars, DonutChart } from "@/components/charts/Charts"
 import { EmptyState, ErrorState, LoadingSkeleton, LoadingState } from "@/components/common/States"
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed"
-import type { ActivityItem } from "@/components/dashboard/ActivityFeed"
 import { QuickActions } from "@/components/dashboard/QuickActions"
 import type { QuickAction } from "@/components/dashboard/QuickActions"
 import { StatCard } from "@/components/dashboard/StatCard"
@@ -42,70 +43,25 @@ import { useAsync } from "@/hooks/useAsync"
 import type { AsyncPhase } from "@/hooks/useAsync"
 import { useHealth } from "@/hooks/useHealth"
 import { useStatus } from "@/hooks/useStatus"
+import { buildActivity } from "@/lib/activity"
 import { API_BASE_URL } from "@/lib/api"
+import { getClientOverview, getNotifications } from "@/lib/caseWorkspace"
 import { DOCUMENTS_CHANGED_EVENT, getOverviewStats, listDocuments } from "@/lib/documents"
-import { formatFileType } from "@/lib/format"
+import { formatDateTime, formatFileType } from "@/lib/format"
 import { RISK_LEVELS, RISK_META, riskLevelFromScoreOrNull, toRiskLevel } from "@/lib/risk"
 import { ROLE_META } from "@/lib/roles"
-import type { DocumentSummary, OverviewStats } from "@/lib/types"
+import type { DocumentSummary, NotificationItem, OverviewStats } from "@/lib/types"
+import { CompanyDashboardPage } from "@/pages/CompanyDashboardPage"
+import { LawyerDashboardPage } from "@/pages/LawyerDashboardPage"
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { label: "Upload Documents", description: "Add a contract to review", icon: Upload, to: "/dashboard/upload" },
-  { label: "My Documents", description: "Browse uploaded contracts", icon: FileText, to: "/dashboard/documents" },
-  { label: "Analysis Reports", description: "Review completed analyses", icon: ClipboardList, to: "/dashboard/reports" },
-  { label: "Find Legal Help", description: "Directory and cases", icon: Gavel, to: "/dashboard/legal-help" },
-  { label: "Messages", description: "Conversations", icon: MessageSquare, to: "/dashboard/messages" },
-  { label: "Settings", description: "Profile and preferences", icon: Settings, to: "/dashboard/settings" },
+  { label: "Upload Document", description: "Add a contract to review", icon: Upload, to: "/dashboard/upload" },
+  { label: "Analyze Document", description: "Review completed analyses", icon: ClipboardList, to: "/dashboard/reports" },
+  { label: "Find a Lawyer", description: "Browse the directory", icon: Gavel, to: "/dashboard/legal-help" },
+  { label: "Post a Case", description: "Get help on a legal matter", icon: Briefcase, to: "/dashboard/post-case" },
+  { label: "My Legal Cases", description: "Track your matters", icon: FileText, to: "/dashboard/legal-cases" },
+  { label: "Messages", description: "Case conversations", icon: MessageSquare, to: "/dashboard/messages" },
 ]
-
-function buildActivity(items: DocumentSummary[]): ActivityItem[] {
-  const events: ActivityItem[] = []
-  for (const doc of items) {
-    events.push({
-      id: `upload-${doc.id}`,
-      title: "Document uploaded",
-      description: doc.title,
-      timestamp: doc.created_at,
-      icon: Upload,
-      tone: "default",
-    })
-    if (doc.extracted_at) {
-      events.push({
-        id: `extract-${doc.id}`,
-        title: "Text extracted",
-        description: doc.title,
-        timestamp: doc.extracted_at,
-        icon: FileText,
-        tone: "default",
-      })
-    }
-    if (doc.status === "FAILED") {
-      events.push({
-        id: `failed-${doc.id}`,
-        title: "Processing failed",
-        description: doc.error_message ?? doc.title,
-        timestamp: doc.updated_at,
-        icon: AlertTriangle,
-        tone: "destructive",
-      })
-    } else if (doc.status === "PROCESSED") {
-      events.push({
-        id: `analyzed-${doc.id}`,
-        title: "Analysis completed",
-        description:
-          doc.risk_score !== null
-            ? `${doc.title} · risk ${Math.round(doc.risk_score)}/100`
-            : doc.title,
-        timestamp: doc.updated_at,
-        icon: CheckCircle2,
-        tone: "success",
-      })
-    }
-  }
-  return events
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 6)
-}
 
 interface DocsView {
   phase: AsyncPhase
@@ -261,6 +217,134 @@ function RecentActivity({ docs }: { docs: DocsView }) {
         />
       }
     />
+  )
+}
+
+function ClientLegalActivity() {
+  const overviewLoader = useCallback(() => getClientOverview(), [])
+  const notificationsLoader = useCallback(() => getNotifications(), [])
+  const { state: overview, refresh } = useAsync(overviewLoader)
+  const { state: notifications } = useAsync(notificationsLoader)
+
+  const loading = overview.phase === "loading" || overview.phase === "idle"
+  const recent = (notifications.data ?? []).slice(0, 5)
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold tracking-tight">Legal matters</h2>
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/dashboard/legal-cases">
+            View all
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <LoadingSkeleton key={index} rows={1} />
+          ))}
+        </div>
+      ) : overview.phase === "error" ? (
+        <ErrorState
+          title="Could not load your legal overview"
+          description={overview.error ?? undefined}
+          onRetry={() => void refresh()}
+        />
+      ) : overview.data ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            label="Open requests"
+            value={overview.data.open_requests}
+            hint={`${overview.data.submitted_cases} posted in total`}
+            icon={Inbox}
+          />
+          <StatCard
+            label="Active matters"
+            value={overview.data.active_matters}
+            hint={`${overview.data.completed_matters} completed`}
+            icon={Gavel}
+            tone="success"
+          />
+          <StatCard
+            label="Upcoming consultations"
+            value={overview.data.upcoming_consultations}
+            hint="Confirmed appointments"
+            icon={CalendarClock}
+          />
+          <StatCard
+            label="Unread messages"
+            value={overview.data.unread_messages}
+            hint="Across your cases"
+            icon={MessageSquare}
+            tone={overview.data.unread_messages > 0 ? "warning" : "default"}
+          />
+        </div>
+      ) : null}
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle>Recent legal activity</CardTitle>
+          <Button asChild variant="ghost" size="sm">
+            <Link to="/dashboard/notifications">
+              Notifications
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {notifications.phase === "loading" || notifications.phase === "idle" ? (
+            <LoadingSkeleton rows={3} />
+          ) : notifications.phase === "error" ? (
+            <ErrorState
+              title="Could not load legal activity"
+              description={notifications.error ?? undefined}
+            />
+          ) : recent.length === 0 ? (
+            <EmptyState
+              icon={Bell}
+              title="No legal activity yet"
+              description="Post a case or message an assigned lawyer to see updates here."
+              action={
+                <Button asChild size="sm">
+                  <Link to="/dashboard/post-case">Post a case</Link>
+                </Button>
+              }
+            />
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {recent.map((item: NotificationItem) => (
+                <li
+                  key={item.id}
+                  className="flex items-start gap-3 rounded-lg border border-border p-3"
+                >
+                  <Bell
+                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{item.title}</p>
+                    {item.detail ? (
+                      <p className="text-sm text-muted-foreground">{item.detail}</p>
+                    ) : null}
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {formatDateTime(item.created_at)}
+                    </p>
+                  </div>
+                  {item.case_id ? (
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to={`/dashboard/cases/${item.case_id}`}>Open</Link>
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   )
 }
 
@@ -431,8 +515,8 @@ function SystemStatus() {
   )
 }
 
-export function DashboardPage() {
-  const { role } = useRole()
+function IndividualDashboard() {
+  const { role, setRole } = useRole()
   const statsLoader = useCallback(() => getOverviewStats(), [])
   const docsLoader = useCallback(() => listDocuments({ limit: 8 }), [])
   const { state: stats, refresh: refreshStats } = useAsync(statsLoader)
@@ -460,13 +544,25 @@ export function DashboardPage() {
             detected risk.
           </p>
         </div>
-        <Button asChild>
-          <Link to="/dashboard/upload">
-            <Upload className="size-4" aria-hidden="true" />
-            Upload document
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setRole("company")}
+            title="Preview the Company Dashboard (UI preview only — does not change permissions)"
+          >
+            <Building2 className="size-4" aria-hidden="true" />
+            Company Dashboard
+          </Button>
+          <Button asChild>
+            <Link to="/dashboard/upload">
+              <Upload className="size-4" aria-hidden="true" />
+              Upload document
+            </Link>
+          </Button>
+        </div>
       </div>
+
+      <ClientLegalActivity />
 
       {statsLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -508,4 +604,22 @@ export function DashboardPage() {
       <SystemStatus />
     </div>
   )
+}
+
+/**
+ * The `/dashboard` index renders the overview for the active workspace role
+ * preview. Company users get the company overview, lawyers get the lawyer
+ * caseload overview, and every other role keeps the individual workspace
+ * overview. This mirrors navigation shaping and is not an access-control
+ * boundary.
+ */
+export function DashboardPage() {
+  const { role } = useRole()
+  if (role === "company") {
+    return <CompanyDashboardPage />
+  }
+  if (role === "lawyer") {
+    return <LawyerDashboardPage />
+  }
+  return <IndividualDashboard />
 }

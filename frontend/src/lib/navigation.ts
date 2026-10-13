@@ -1,12 +1,17 @@
 import {
+  Bell,
+  Building2,
+  CalendarDays,
   ClipboardList,
   FileText,
   Gavel,
+  Inbox,
   LayoutDashboard,
   MessageSquare,
   Settings,
   ShieldCheck,
   Upload,
+  UserCog,
   Users,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
@@ -32,20 +37,73 @@ const ALL_ROLES: UserRole[] = ["individual", "company", "lawyer", "admin"]
 /**
  * Single source of truth for dashboard navigation. Each item declares the roles
  * that may see it, so `navigationForRole` can shape the sidebar per workspace.
- * Items marked `comingSoon` render as disabled placeholders for future roles.
+ * Items marked `comingSoon` render as disabled placeholders.
+ *
+ * Navigation shaping is presentation only and is not an access-control
+ * boundary; the backend enforces role checks independently.
  */
 export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Overview",
     items: [
-      { label: "Dashboard", icon: LayoutDashboard, to: "/dashboard", end: true, roles: ALL_ROLES },
+      {
+        label: "Dashboard",
+        icon: LayoutDashboard,
+        to: "/dashboard",
+        end: true,
+        roles: ["individual", "lawyer", "admin"],
+      },
+      {
+        label: "Overview",
+        icon: LayoutDashboard,
+        to: "/dashboard",
+        end: true,
+        roles: ["company"],
+      },
+    ],
+  },
+  {
+    label: "Cases",
+    items: [
+      {
+        label: "Available Cases",
+        icon: Inbox,
+        to: "/dashboard/available-cases",
+        roles: ["lawyer"],
+      },
+      {
+        label: "My Cases",
+        icon: Gavel,
+        to: "/dashboard/my-cases",
+        roles: ["lawyer"],
+      },
+      {
+        label: "Find a Lawyer",
+        icon: Users,
+        to: "/dashboard/legal-help",
+        roles: ["individual"],
+      },
+      {
+        label: "Post a Case",
+        icon: Gavel,
+        to: "/dashboard/post-case",
+        roles: ["individual"],
+      },
+      {
+        label: "My Legal Cases",
+        icon: Gavel,
+        to: "/dashboard/legal-cases",
+        roles: ["individual"],
+      },
     ],
   },
   {
     label: "Documents",
     items: [
-      { label: "Upload Documents", icon: Upload, to: "/dashboard/upload", roles: ALL_ROLES },
-      { label: "My Documents", icon: FileText, to: "/dashboard/documents", roles: ALL_ROLES },
+      { label: "Upload Documents", icon: Upload, to: "/dashboard/upload", roles: ["individual", "lawyer", "admin"] },
+      { label: "My Documents", icon: FileText, to: "/dashboard/documents", roles: ["individual", "lawyer", "admin"] },
+      { label: "Company Documents", icon: Building2, to: "/dashboard/documents", roles: ["company"] },
+      { label: "Upload Contract", icon: Upload, to: "/dashboard/upload", roles: ["company"] },
       {
         label: "Analysis Reports",
         icon: ClipboardList,
@@ -55,33 +113,33 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    label: "Workspace",
+    label: "Communication",
+    items: [
+      { label: "Messages", icon: MessageSquare, to: "/dashboard/messages", roles: ["individual", "lawyer", "admin"] },
+      { label: "Calendar", icon: CalendarDays, to: "/dashboard/calendar", roles: ["lawyer"] },
+      { label: "Notifications", icon: Bell, to: "/dashboard/notifications", roles: ["lawyer", "individual"] },
+    ],
+  },
+  {
+    label: "Compliance",
     items: [
       {
-        label: "Find Legal Help",
-        icon: Gavel,
-        to: "/dashboard/legal-help",
-        roles: ["individual", "company"],
-      },
-      {
-        label: "My Cases",
-        icon: Gavel,
-        to: "/dashboard/cases",
-        roles: ["lawyer"],
+        label: "Audit Reports",
+        icon: ShieldCheck,
+        to: "/dashboard/audit-reports",
+        roles: ["company", "admin"],
         comingSoon: true,
       },
-      { label: "Messages", icon: MessageSquare, to: "/dashboard/messages", roles: ALL_ROLES },
-      { label: "Settings", icon: Settings, to: "/dashboard/settings", roles: ALL_ROLES },
     ],
   },
   {
     label: "Administration",
     items: [
       {
-        label: "Team & Roles",
+        label: "Team Management",
         icon: Users,
         to: "/dashboard/team",
-        roles: ["company", "lawyer", "admin"],
+        roles: ["company", "admin"],
         comingSoon: true,
       },
       {
@@ -91,6 +149,13 @@ export const NAV_SECTIONS: NavSection[] = [
         roles: ["admin"],
         comingSoon: true,
       },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { label: "Lawyer Profile", icon: UserCog, to: "/dashboard/profile", roles: ["lawyer"] },
+      { label: "Settings", icon: Settings, to: "/dashboard/settings", roles: ALL_ROLES },
     ],
   },
 ]
@@ -103,14 +168,18 @@ export function navigationForRole(role: UserRole): NavSection[] {
 }
 
 /** Best-effort page title for the shell header, based on the active route. */
-export function findNavItemLabel(pathname: string): string {
+export function findNavItemLabel(pathname: string, role?: UserRole): string {
   if (pathname.startsWith("/dashboard/analyses")) {
     return "Analysis Reports"
   }
+  if (pathname.startsWith("/dashboard/cases/")) {
+    return "Case details"
+  }
 
+  const sections = role ? navigationForRole(role) : NAV_SECTIONS
   let label = "Dashboard"
   let best = -1
-  for (const section of NAV_SECTIONS) {
+  for (const section of sections) {
     for (const item of section.items) {
       const matches = item.end
         ? pathname === item.to

@@ -1,18 +1,22 @@
 import {
-  ArrowRight,
+  Building2,
   Database,
   FileSearch,
   FileText,
+  Gavel,
   ScanLine,
   ShieldCheck,
   Sparkles,
+  User,
 } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 
 import { ConnectionStatus } from "@/components/layout/ConnectionStatus"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useRole } from "@/context/RoleContext"
+import type { UserRole } from "@/lib/roles"
 
 const features = [
   {
@@ -48,6 +52,14 @@ const steps = [
 ]
 
 export function HomePage() {
+  const navigate = useNavigate()
+  const { setRole } = useRole()
+
+  const openDashboard = (role: UserRole) => {
+    setRole(role)
+    navigate("/dashboard")
+  }
+
   return (
     <div className="flex flex-col">
       <section className="mx-auto flex w-full max-w-6xl flex-col items-center px-4 py-20 text-center sm:px-6 sm:py-28">
@@ -62,14 +74,41 @@ export function HomePage() {
           JurisScan-AI turns dense contracts into structured clauses and reviewable risk findings —
           with explanations, severity and citations you can act on.
         </p>
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <Button asChild size="lg">
-            <Link to="/dashboard">
-              Open dashboard
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </Link>
+        <div className="mt-8 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
+          <Button
+            variant="outline"
+            size="lg"
+            className="justify-center"
+            onClick={() => openDashboard("individual")}
+          >
+            <User className="size-4" aria-hidden="true" />
+            User Dashboard
           </Button>
-          <Button asChild variant="outline" size="lg">
+          <Button
+            variant="outline"
+            size="lg"
+            className="justify-center"
+            onClick={() => openDashboard("company")}
+          >
+            <Building2 className="size-4" aria-hidden="true" />
+            Company Dashboard
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            className="justify-center"
+            onClick={() => openDashboard("lawyer")}
+          >
+            <Gavel className="size-4" aria-hidden="true" />
+            Lawyer Dashboard
+          </Button>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Preview modes for the shared workspace — sign-in and role-based access are not implemented
+          yet.
+        </p>
+        <div className="mt-6">
+          <Button asChild variant="ghost" size="lg">
             <a href="#features">Explore features</a>
           </Button>
         </div>
