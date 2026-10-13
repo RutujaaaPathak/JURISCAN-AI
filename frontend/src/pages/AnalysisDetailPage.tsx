@@ -246,12 +246,27 @@ function DetailBody({ doc }: { doc: DocumentDetail }) {
             <CardContent className="flex flex-col gap-3">
               {doc.clauses.map((clause) => {
                 const clauseLevel = toRiskLevel(clause.risk_level)
+                const nestIndent = clause.level && clause.level > 1 ? Math.min((clause.level - 1) * 16, 48) : 0
                 return (
-                  <div key={clause.id} className="rounded-lg border border-border p-3">
+                  <div
+                    key={clause.id}
+                    className="rounded-lg border border-border p-3"
+                    style={nestIndent > 0 ? { marginLeft: `${nestIndent}px` } : undefined}
+                  >
                     <div className="mb-1.5 flex flex-wrap items-center gap-2">
                       <span className="text-xs font-medium text-muted-foreground">
                         Clause {clause.clause_number}
                       </span>
+                      {clause.label ? (
+                        <Badge variant="secondary" className="font-mono text-[10px]">
+                          {clause.label}
+                        </Badge>
+                      ) : null}
+                      {clause.level && clause.level > 1 ? (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          L{clause.level}
+                        </span>
+                      ) : null}
                       {clause.heading ? (
                         <span className="truncate text-sm font-medium">{clause.heading}</span>
                       ) : null}
