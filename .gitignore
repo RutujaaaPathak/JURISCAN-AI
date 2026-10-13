@@ -6,10 +6,11 @@ __pycache__/
 venv/
 env/
 
-# Environment files
+# Environment files (keep *.example templates committed)
 .env
 .env.local
 .env.*.local
+.env.development
 
 # Build outputs
 dist/
@@ -27,6 +28,7 @@ models/*.bin
 # Data
 data/raw/
 data/processed/
+backend/data/
 *.csv.tmp
 
 # Logs
@@ -44,6 +46,10 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Local dev databases
+*.db
+*.sqlite3
 
 # Docker
 docker/*.pid
