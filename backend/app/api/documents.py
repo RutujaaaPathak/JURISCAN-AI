@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import CurrentUser, DbSession
 from app.config import settings
 from app.core.exceptions import NotFoundError, ValidationFailed
-from app.models import Analysis, Clause, Document, RiskFinding
+from app.models import Analysis, Case, CaseDocument, Clause, Document, RiskFinding
 from app.schemas.documents import (
     AnalysisDetail,
     ClauseRead,
@@ -178,11 +178,32 @@ def _detail_payload(document: Document) -> dict:
     return payload
 
 
+def _shared_document_ids(user_id: int):
+    """Document ids the user may read because they are linked to a case they
+    posted or are the assigned lawyer for. This is the authorization rule that
+    lets an accepted lawyer open a client's attached documents without granting
+    access to any other document."""
+
+    return (
+        select(CaseDocument.document_id)
+        .join(Case, Case.id == CaseDocument.case_id)
+        .where(
+            or_(
+                Case.posted_by_user_id == user_id,
+                Case.assigned_lawyer_id == user_id,
+            )
+        )
+    )
+
+
 def _get_document_or_404(db: DbSession, document_id: int, user_id: int) -> Document:
     document = db.scalar(
         _document_query().where(
             Document.id == document_id,
-            Document.user_id == user_id,
+            or_(
+                Document.user_id == user_id,
+                Document.id.in_(_shared_document_ids(user_id)),
+            ),
         )
     )
     if document is None:
@@ -294,7 +315,13 @@ def get_analysis(db: DbSession, user: CurrentUser, analysis_id: int) -> dict:
         select(Analysis)
         .options(selectinload(Analysis.risk_findings))
         .join(Document, Analysis.document_id == Document.id)
-        .where(Analysis.id == analysis_id, Document.user_id == user.id)
+        .where(
+            Analysis.id == analysis_id,
+            or_(
+                Document.user_id == user.id,
+                Document.id.in_(_shared_document_ids(user.id)),
+            ),
+        )
     )
     if analysis is None:
         raise NotFoundError(

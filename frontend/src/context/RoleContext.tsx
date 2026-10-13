@@ -1,6 +1,7 @@
-import { createContext, useContext, useMemo, useState } from "react"
+import { createContext, useContext, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 
+import { setDeveloperRole } from "@/lib/api"
 import type { UserRole } from "@/lib/roles"
 import { DEFAULT_ROLE } from "@/lib/roles"
 
@@ -25,6 +26,12 @@ export function RoleProvider({
 }) {
   const [role, setRole] = useState<UserRole>(initialRole)
   const value = useMemo(() => ({ role, setRole }), [role])
+
+  // Keep the development-only backend role-preview header in sync. Harmless in
+  // production because the backend ignores it there, and it is not security.
+  useEffect(() => {
+    setDeveloperRole(role)
+  }, [role])
 
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>
 }

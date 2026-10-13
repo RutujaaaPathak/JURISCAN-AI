@@ -36,6 +36,11 @@ class ConflictError(AppError):
         super().__init__(message, code=code, status_code=409, details=details)
 
 
+class ForbiddenError(AppError):
+    def __init__(self, message: str, *, code: str = "forbidden", details: Any = None) -> None:
+        super().__init__(message, code=code, status_code=403, details=details)
+
+
 class ValidationFailed(AppError):
     def __init__(self, message: str, *, code: str = "validation_error", details: Any = None) -> None:
         super().__init__(message, code=code, status_code=422, details=details)
@@ -92,6 +97,7 @@ __all__ = [
     "AppError",
     "NotFoundError",
     "ConflictError",
+    "ForbiddenError",
     "ValidationFailed",
     "register_exception_handlers",
 ]
