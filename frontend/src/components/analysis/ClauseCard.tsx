@@ -8,7 +8,11 @@ import { RISK_META, toRiskLevel } from "@/lib/risk"
 
 function clauseLabel(finding: RiskFindingRead): string {
   const parts: string[] = []
-  if (finding.clause_number !== null) parts.push(`Clause ${finding.clause_number}`)
+  if (finding.clause_label) {
+    parts.push(finding.clause_label)
+  } else if (finding.clause_number !== null) {
+    parts.push(`Clause ${finding.clause_number}`)
+  }
   if (finding.clause_page !== null) parts.push(`p.${finding.clause_page}`)
   return parts.join(" · ")
 }

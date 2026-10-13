@@ -253,3 +253,132 @@ def test_segmentation_is_deterministic():
     assert [(s.number, s.label, s.level, s.start_offset, s.end_offset) for s in first] == [
         (s.number, s.label, s.level, s.start_offset, s.end_offset) for s in second
     ]
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for documented edge cases.
+# ---------------------------------------------------------------------------
+
+
+def test_inline_numbering_is_not_split():
+    # Known limitation: numbering that runs inside a single wrapping line stays
+    # whole, so the original wording is never re-flowed or truncated.
+    text = (
+        "1. Definitions. In this Agreement the following terms apply. "
+        "2. Payment. The Customer shall pay within thirty days. "
+        "3. Termination. Either party may terminate on written notice."
+    )
+
+    segments = segment_clauses(text)
+
+    assert len(segments) == 1
+    assert segments[0].label == "1"
+    assert "2. Payment" in segments[0].text
+    assert "3. Termination" in segments[0].text
+    _assert_exact_slices(text, segments)
+
+
+def test_all_caps_heading_is_not_a_boundary_in_numbered_document():
+    # Known limitation: an unnumbered all-caps heading between numbered clauses
+    # is not a split point, so it stays inside the preceding clause.
+    text = (
+        "1. Definitions\n"
+        "CONFIDENTIALITY\n"
+        "The parties shall keep all information secret.\n\n"
+        "2. Term\n"
+        "This Agreement continues until terminated.\n"
+    )
+
+    segments = segment_clauses(text)
+
+    assert len(segments) == 2
+    assert segments[0].label == "1"
+    assert "CONFIDENTIALITY" in segments[0].text
+    assert segments[1].label == "2"
+    _assert_exact_slices(text, segments)
+
+
+def test_ambiguous_parenthesised_markers_resolve_roman_vs_letter():
+    # "(i)"/"(ii)" are Roman numerals (level 4); "(c)" is a letter (level 3)
+    # because a single "c" is not a Roman token. Both nest under clause 1.
+    text = (
+        "1. Rights\n"
+        "(i) first item with enough words to stand as a subclause on its own;\n"
+        "(ii) second item with enough words to stand as a subclause on its own;\n"
+        "(c) lettered item that is deliberately not a Roman numeral at all;\n"
+    )
+
+    segments = segment_clauses(text)
+
+    assert len(segments) == 4
+    assert segments[1].label == "(i)"
+    assert segments[1].kind == "roman" and segments[1].level == 4
+    assert segments[2].label == "(ii)"
+    assert segments[2].kind == "roman" and segments[2].level == 4
+    assert segments[3].label == "(c)"
+    assert segments[3].kind == "letter" and segments[3].level == 3
+    assert all(segment.parent == 0 for segment in segments[1:])
+    _assert_exact_slices(text, segments)
+
+
+def test_lowercase_roman_subclause_markers_are_recognised():
+    # Multi-letter lowercase Roman markers ("ii.", "iv)") are subclause numerals
+    # and nest like their parenthesised form.
+    text_dot = (
+        "1. Warranties\n"
+        "ii. The first warranty is given with full authority to contract here;\n"
+        "iii. The second warranty is that the services conform to spec here;\n"
+        "iv. The third warranty concerns compliance with applicable law here;\n"
+    )
+    segments = segment_clauses(text_dot)
+    assert [segment.label for segment in segments] == ["1", "ii", "iii", "iv"]
+    assert all(segment.kind == "roman" for segment in segments[1:])
+    assert all(segment.level == 4 for segment in segments[1:])
+    assert all(segment.parent == 0 for segment in segments[1:])
+    _assert_exact_slices(text_dot, segments)
+
+    text_paren = (
+        "1. Warranties\n"
+        "ii) The first warranty is given with full authority to contract here;\n"
+        "iv) The third warranty concerns compliance with applicable law here;\n"
+    )
+    paren = segment_clauses(text_paren)
+    assert [segment.label for segment in paren] == ["1", "ii", "iv"]
+    assert all(segment.kind == "roman" for segment in paren[1:])
+    _assert_exact_slices(text_paren, paren)
+
+
+def test_single_letter_lowercase_markers_are_not_roman():
+    # Documented behaviour: a single lowercase "v"/"x" is treated as a lettered
+    # item (level 2), and a lone "i" is not a marker at all.
+    text = (
+        "1. General\n"
+        "v. A lettered item that is reasonably long and meaningful here;\n"
+        "x. Another lettered item that is reasonably long and meaningful here;\n"
+    )
+    segments = segment_clauses(text)
+    assert [segment.label for segment in segments] == ["1", "v", "x"]
+    assert all(segment.kind == "letter" for segment in segments[1:])
+
+    lone_i = "1. General\ni. This lone lowercase i is left as prose on purpose here.\n"
+    assert len(segment_clauses(lone_i)) == 1
+
+
+def test_merged_paragraph_offsets_are_exact():
+    # Short unnumbered paragraphs are merged, but the stored text must remain an
+    # exact slice of the source (including the blank line between blocks).
+    text = (
+        "First short block.\n\n"
+        "Second short block.\n\n"
+        "Third short block here.\n\n"
+        "A much longer final paragraph that clearly exceeds the minimum clause "
+        "length threshold all by itself."
+    )
+
+    segments = segment_clauses(text)
+
+    assert len(segments) == 2
+    assert segments[0].text == (
+        "First short block.\n\nSecond short block.\n\nThird short block here."
+    )
+    _assert_exact_slices(text, segments)

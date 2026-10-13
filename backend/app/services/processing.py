@@ -73,13 +73,16 @@ def recover_stale_documents(db: Session, *, stale_seconds: int) -> int:
     return recovered
 
 
-def _clear_results(db: Session, document: Document) -> None:
+def _clear_results(
+    db: Session, document: Document, *, keep_clauses: bool = True
+) -> None:
     for analysis in list(document.analyses):
         for finding in list(analysis.risk_findings):
             db.delete(finding)
         db.delete(analysis)
-    for clause in list(document.clauses):
-        db.delete(clause)
+    if not keep_clauses:
+        for clause in list(document.clauses):
+            db.delete(clause)
 
 
 def _prepare_retry(
@@ -94,7 +97,7 @@ def _prepare_retry(
     """Reset a failed document so the same row can be processed again."""
 
     delete_upload(document.storage_path)
-    _clear_results(db, document)
+    _clear_results(db, document, keep_clauses=True)
     document.title = title
     document.filename = filename
     document.file_type = file_type
@@ -118,6 +121,135 @@ def _finalize_failed(db: Session, document_id: int, message: str) -> None:
     document.error_message = message
     document.storage_path = None
     db.commit()
+
+
+def persist_clauses(
+    db: Session,
+    document: Document,
+    segments: list,
+    pages: list,
+    result: Any,
+) -> list[Clause]:
+    """Persist segmented clauses for ``document``, updating existing rows by
+    clause_number to reuse IDs, preserve risk-finding references, prevent duplicate
+    clauses during retries, and establish within-document parent hierarchy."""
+
+    existing_by_number: dict[int, Clause] = {
+        clause.clause_number: clause for clause in document.clauses
+    }
+
+    clauses: list[Clause] = []
+    # Step 1: Update existing clauses or insert new ones
+    for index, segment in enumerate(segments):
+        page_num = page_number_for_offset(pages, segment.start_offset)
+        clause_type = (
+            result.clause_type_by_index.get(index)
+            if hasattr(result, "clause_type_by_index") and result.clause_type_by_index
+            else None
+        )
+        risk_level = (
+            result.risk_level_by_index.get(index)
+            if hasattr(result, "risk_level_by_index") and result.risk_level_by_index
+            else None
+        )
+
+        if segment.number in existing_by_number:
+            clause = existing_by_number[segment.number]
+            clause.heading = segment.heading
+            clause.text = segment.text
+            clause.start_offset = segment.start_offset
+            clause.end_offset = segment.end_offset
+            clause.page_number = page_num
+            clause.label = segment.label
+            clause.level = segment.level
+            if clause_type is not None:
+                clause.clause_type = clause_type
+            if risk_level is not None:
+                clause.risk_level = risk_level
+        else:
+            clause = Clause(
+                document_id=document.id,
+                clause_number=segment.number,
+                heading=segment.heading,
+                text=segment.text,
+                start_offset=segment.start_offset,
+                end_offset=segment.end_offset,
+                page_number=page_num,
+                clause_type=clause_type,
+                risk_level=risk_level,
+                label=segment.label,
+                level=segment.level,
+            )
+            db.add(clause)
+        clauses.append(clause)
+
+    # Step 2: Remove any excess clauses that no longer exist in the document
+    new_numbers = {segment.number for segment in segments}
+    for old_num, old_clause in list(existing_by_number.items()):
+        if old_num not in new_numbers:
+            db.delete(old_clause)
+
+    # Flush to ensure newly added clauses receive primary keys
+    db.flush()
+
+    # Step 3: Link parent-child hierarchy within the current document
+    for index, segment in enumerate(segments):
+        if segment.parent is not None:
+            if 0 <= segment.parent < len(clauses):
+                parent_clause = clauses[segment.parent]
+                if parent_clause.document_id != document.id:
+                    raise ValueError("Parent clause must belong to the same document.")
+                clauses[index].parent_id = parent_clause.id
+            else:
+                clauses[index].parent_id = None
+        else:
+            clauses[index].parent_id = None
+
+    db.flush()
+    return clauses
+
+
+def sync_legacy_clause_hierarchy(
+    db: Session,
+    document: Document,
+) -> list[Clause]:
+    """Backfill hierarchy metadata (label, level, parent_id, offsets) for legacy
+    clauses in ``document`` using deterministic segmentation."""
+
+    if not document.text_content:
+        return list(document.clauses)
+
+    segments = segment_clauses(document.text_content)
+    if not segments:
+        return list(document.clauses)
+
+    clauses_by_number = {c.clause_number: c for c in document.clauses}
+    ordered_clauses: list[Clause] = []
+
+    for segment in segments:
+        if segment.number in clauses_by_number:
+            clause = clauses_by_number[segment.number]
+            clause.label = segment.label
+            clause.level = segment.level
+            if clause.start_offset is None:
+                clause.start_offset = segment.start_offset
+            if clause.end_offset is None:
+                clause.end_offset = segment.end_offset
+            ordered_clauses.append(clause)
+
+    for index, segment in enumerate(segments):
+        if index < len(ordered_clauses):
+            clause = ordered_clauses[index]
+            if segment.parent is not None and 0 <= segment.parent < len(ordered_clauses):
+                parent_clause = ordered_clauses[segment.parent]
+                if parent_clause.document_id != document.id:
+                    raise ValueError("Parent clause must belong to the same document.")
+                clause.parent_id = parent_clause.id
+            else:
+                clause.parent_id = None
+
+    db.flush()
+    return ordered_clauses
 
 
 def run_processing(
@@ -158,24 +290,13 @@ def run_processing(
         document.error_message = None
         db.flush()
 
-        clauses: list[Clause] = []
-        for index, segment in enumerate(segments):
-            clause = Clause(
-                document_id=document.id,
-                clause_number=segment.number,
-                heading=segment.heading,
-                text=segment.text,
-                start_offset=segment.start_offset,
-                end_offset=segment.end_offset,
-                page_number=page_number_for_offset(
-                    extracted.pages, segment.start_offset
-                ),
-                clause_type=result.clause_type_by_index.get(index),
-                risk_level=result.risk_level_by_index.get(index),
-            )
-            db.add(clause)
-            clauses.append(clause)
-        db.flush()
+        clauses = persist_clauses(
+            db,
+            document,
+            segments,
+            extracted.pages,
+            result,
+        )
 
         now = extracted.extracted_at
         analysis = Analysis(
@@ -299,4 +420,10 @@ def process_upload(
     )
 
 
-__all__ = ["process_upload", "recover_stale_documents", "run_processing"]
+__all__ = [
+    "persist_clauses",
+    "process_upload",
+    "recover_stale_documents",
+    "run_processing",
+    "sync_legacy_clause_hierarchy",
+]

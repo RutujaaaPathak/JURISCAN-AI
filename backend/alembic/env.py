@@ -23,6 +23,10 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
+    # Use sqlalchemy.url from config if provided (e.g. by tests), otherwise fall back to settings.
+    cfg_url = config.get_main_option("sqlalchemy.url")
+    if cfg_url and "user:pass@host:port/dbname" not in cfg_url:
+        return cfg_url.replace("%", "%%")
     # Alembic config values are $(...) interpolated; escape any '%' in credentials.
     return settings.database_url.replace("%", "%%")
 
