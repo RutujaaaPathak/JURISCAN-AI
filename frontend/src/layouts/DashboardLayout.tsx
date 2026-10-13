@@ -1,19 +1,26 @@
 import { Menu, X } from "lucide-react"
 import { useState } from "react"
-import { Outlet } from "react-router-dom"
+import { Outlet, useLocation } from "react-router-dom"
 
 import { Brand } from "@/components/layout/Brand"
 import { ConnectionStatus } from "@/components/layout/ConnectionStatus"
 import { Sidebar } from "@/components/layout/Sidebar"
+import { Badge } from "@/components/ui/badge"
+import { useRole } from "@/context/RoleContext"
+import { findNavItemLabel } from "@/lib/navigation"
+import { ROLE_META } from "@/lib/roles"
 
 export function DashboardLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const { role } = useRole()
+  const { pathname } = useLocation()
+  const title = findNavItemLabel(pathname)
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <aside className="hidden w-64 shrink-0 border-r border-border md:flex md:flex-col">
         <div className="flex h-16 items-center border-b border-border px-4">
-          <Brand />
+          <Brand to="/dashboard" />
         </div>
         <Sidebar />
       </aside>
@@ -25,9 +32,9 @@ export function DashboardLayout() {
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
           />
-          <aside className="absolute left-0 top-0 h-full w-64 border-r border-border bg-background">
+          <aside className="absolute top-0 left-0 h-full w-64 border-r border-border bg-background">
             <div className="flex h-16 items-center justify-between border-b border-border px-4">
-              <Brand />
+              <Brand to="/dashboard" />
               <button
                 type="button"
                 aria-label="Close navigation"
@@ -53,7 +60,10 @@ export function DashboardLayout() {
             >
               <Menu className="size-4" aria-hidden="true" />
             </button>
-            <span className="text-sm font-medium">Dashboard</span>
+            <span className="text-sm font-medium">{title}</span>
+            <Badge variant="outline" className="hidden sm:inline-flex">
+              {ROLE_META[role].label} workspace
+            </Badge>
           </div>
           <ConnectionStatus compact />
         </header>
