@@ -10,7 +10,7 @@ import {
   Send,
   X,
 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import { EmptyState, ErrorState, LoadingSkeleton } from "@/components/common/States"
 import { Badge } from "@/components/ui/badge"
@@ -23,7 +23,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { useRole } from "@/context/RoleContext"
 import { useAsync } from "@/hooks/useAsync"
+import { useCaseMessages } from "@/hooks/useCaseMessages"
+import type { ChatConnection } from "@/hooks/useCaseMessages"
 import { ApiError } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
 import {
   acceptCaseFee,
   cancelCaseAppointment,
@@ -31,10 +34,8 @@ import {
   declineCaseFee,
   getCaseAppointments,
   getCaseFees,
-  markCaseMessagesRead,
   proposeCaseAppointment,
   proposeCaseFee,
-  sendCaseMessage,
   shareCaseDocument,
 } from "@/lib/caseWorkspace"
 import { listDocuments } from "@/lib/documents"
@@ -74,85 +75,139 @@ function ActionError({ message }: { message: string | null }) {
   )
 }
 
-function MessagesTab({ caseId }: { caseId: string }) {
-  const loader = useCallback(() => markCaseMessagesRead(caseId), [caseId])
-  const { state, refresh } = useAsync(loader)
-  const [body, setBody] = useState("")
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+const CONNECTION_BADGE: Record<ChatConnection, { label: string; variant: "success" | "warning" | "outline" }> = {
+  online: { label: "Live", variant: "success" },
+  connecting: { label: "Connecting…", variant: "warning" },
+  offline: { label: "Offline — syncing", variant: "outline" },
+}
 
-  async function send() {
-    const text = body.trim()
-    if (!text) return
-    setBusy(true)
-    setError(null)
-    try {
-      await sendCaseMessage(caseId, text)
-      setBody("")
-      refresh()
-    } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Your message could not be sent.")
-    } finally {
-      setBusy(false)
+function MessagesTab({ caseId }: { caseId: string }) {
+  const { user } = useAuth()
+  const { messages, loading, error, connection, sending, send, reload } = useCaseMessages(
+    caseId,
+    user?.id ?? null,
+  )
+  const [body, setBody] = useState("")
+  const listRef = useRef<HTMLUListElement | null>(null)
+  const pinnedRef = useRef(true)
+
+  // Only auto-scroll when the reader is already at the bottom (so scrolling
+  // back to read history is not disrupted), or when their own message lands.
+  const handleScroll = useCallback(() => {
+    const element = listRef.current
+    if (!element) return
+    const distanceFromBottom =
+      element.scrollHeight - element.scrollTop - element.clientHeight
+    pinnedRef.current = distanceFromBottom < 80
+  }, [])
+
+  useEffect(() => {
+    const element = listRef.current
+    if (!element) return
+    const latest = messages[messages.length - 1]
+    if (pinnedRef.current || (latest && latest.sender_user_id === user?.id)) {
+      element.scrollTop = element.scrollHeight
     }
+  }, [messages, user?.id])
+
+  async function submit() {
+    const text = body.trim()
+    if (!text || sending) return
+    const ok = await send(text)
+    if (ok) setBody("")
   }
 
-  const items = state.data?.items ?? []
+  const status = CONNECTION_BADGE[connection]
+  const showEmpty = !loading && messages.length === 0
 
   return (
     <div className="flex flex-col gap-4">
-      {state.phase === "loading" || state.phase === "idle" ? (
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          Messages are delivered live and saved to this case. Only you and the other party can
+          read them.
+        </p>
+        <Badge variant={status.variant}>{status.label}</Badge>
+      </div>
+
+      {loading ? (
         <LoadingSkeleton rows={4} />
-      ) : state.phase === "error" ? (
+      ) : showEmpty && error ? (
         <ErrorState
           title="Could not load messages"
-          description={state.error ?? undefined}
-          onRetry={() => void refresh()}
+          description={error}
+          onRetry={reload}
         />
-      ) : items.length === 0 ? (
+      ) : showEmpty ? (
         <EmptyState
           icon={MessageSquare}
           title="No messages yet"
           description="Start the conversation to coordinate on this matter."
         />
       ) : (
-        <ul className="flex flex-col gap-2">
-          {items.map((message) => (
-            <li key={message.id} className="rounded-lg border border-border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">
-                  {message.sender_name ?? "Unknown sender"}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateTime(message.created_at)}
-                </span>
-              </div>
-              <p className="mt-1 whitespace-pre-line text-sm">{message.body}</p>
-            </li>
-          ))}
+        <ul
+          ref={listRef}
+          onScroll={handleScroll}
+          className="flex max-h-96 flex-col gap-2 overflow-y-auto pr-1"
+        >
+          {messages.map((message) => {
+            const mine = message.sender_user_id === user?.id
+            return (
+              <li key={message.id} className={mine ? "flex justify-end" : "flex justify-start"}>
+                <div
+                  className={[
+                    "max-w-[85%] rounded-lg border p-3",
+                    mine
+                      ? "border-primary/30 bg-primary/5"
+                      : "border-border bg-muted/40",
+                  ].join(" ")}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium">
+                      {mine ? "You" : (message.sender_name ?? "The other party")}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {formatDateTime(message.created_at)}
+                    </span>
+                  </div>
+                  <p className="mt-1 whitespace-pre-line text-sm">{message.body}</p>
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
 
-      <ActionError message={error} />
+      {error && messages.length > 0 ? <ActionError message={error} /> : null}
 
       <div className="flex flex-col gap-2">
         <Textarea
           placeholder="Write a message…"
           value={body}
           onChange={(event) => setBody(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault()
+              void submit()
+            }
+          }}
         />
-        <Button
-          className="self-end"
-          disabled={busy || body.trim().length === 0}
-          onClick={() => void send()}
-        >
-          {busy ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Send className="size-4" aria-hidden="true" />
-          )}
-          Send
-        </Button>
+        <div className="flex items-center justify-end gap-3">
+          {sending ? (
+            <span className="text-xs text-muted-foreground">Sending…</span>
+          ) : null}
+          <Button
+            disabled={sending || body.trim().length === 0}
+            onClick={() => void submit()}
+          >
+            {sending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Send className="size-4" aria-hidden="true" />
+            )}
+            Send
+          </Button>
+        </div>
       </div>
     </div>
   )

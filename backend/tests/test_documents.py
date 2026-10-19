@@ -594,6 +594,78 @@ def test_download_analysis_report_not_available_before_processing(client):
     assert report.json()["error"]["code"] == "report_not_available"
 
 
+def test_report_download_requires_the_owner_s_token(client):
+    """Regression: the export button must send the session token.
+
+    The report endpoint authenticates like every other route. When the frontend
+    requested the PDF without its bearer token, the backend fell back to the dev
+    demo user, who does not own the signed-in user's document, and the download
+    failed with "Document N was not found". This drives the endpoint through the
+    real token path (no dependency override) to lock the behaviour down.
+    """
+
+    from app.config import settings
+    from app.core.database import SessionLocal
+    from app.core.security import create_access_token
+    from app.models import User
+
+    db = SessionLocal()
+    try:
+        owner = User(
+            email="report-owner@example.com",
+            username="report-owner",
+            full_name="Report Owner",
+            role="individual",
+        )
+        stranger = User(
+            email="report-stranger@example.com",
+            username="report-stranger",
+            full_name="Report Stranger",
+            role="individual",
+        )
+        db.add_all([owner, stranger])
+        db.commit()
+        db.refresh(owner)
+        db.refresh(stranger)
+        owner_id, stranger_id = owner.id, stranger.id
+    finally:
+        db.close()
+
+    owner_token = create_access_token(owner_id, secret=settings.secret_key, ttl_seconds=3600)
+    stranger_token = create_access_token(
+        stranger_id, secret=settings.secret_key, ttl_seconds=3600
+    )
+
+    upload = client.post(
+        "/api/documents",
+        files={"file": ("contract.txt", SAMPLE_CONTRACT.encode("utf-8"), "text/plain")},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert upload.status_code == 201, upload.text
+    document_id = upload.json()["id"]
+
+    # No token -> the dev demo fallback user, who does not own the document.
+    anonymous = client.get(f"/api/documents/{document_id}/report")
+    assert anonymous.status_code == 404
+    assert anonymous.json()["error"]["code"] == "document_not_found"
+
+    # A different signed-in user must not be able to read it either.
+    intruder = client.get(
+        f"/api/documents/{document_id}/report",
+        headers={"Authorization": f"Bearer {stranger_token}"},
+    )
+    assert intruder.status_code == 404
+
+    # The owner, with their bearer token, receives a real PDF for the right doc.
+    owner_report = client.get(
+        f"/api/documents/{document_id}/report",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert owner_report.status_code == 200, owner_report.text
+    assert owner_report.headers["content-type"] == "application/pdf"
+    assert owner_report.content.startswith(b"%PDF")
+
+
 def test_delete_document_removes_row_results_and_stored_file(client):
     from pathlib import Path
 

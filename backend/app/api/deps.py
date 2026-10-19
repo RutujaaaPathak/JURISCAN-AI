@@ -41,6 +41,39 @@ def _user_from_token(db: Session, token: str) -> User | None:
     return user
 
 
+def _ensure_default_user(db: Session) -> User:
+    """Return (creating on first use) the development demo workspace user."""
+
+    user = db.scalar(select(User).where(User.email == DEFAULT_USER_EMAIL))
+    if user is None:
+        user = User(
+            email=DEFAULT_USER_EMAIL,
+            username=DEFAULT_USER_USERNAME,
+            full_name=DEFAULT_USER_FULL_NAME,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def authenticate_token(db: Session, token: str | None) -> User | None:
+    """Resolve a caller from a raw bearer token, for non-HTTP transports.
+
+    WebSockets cannot set an ``Authorization`` header from the browser, so the
+    token is delivered in the first message and validated here with the exact
+    same signing scheme the HTTP layer uses. A supplied token must be valid; the
+    development-only demo fallback is used solely when no token is presented
+    outside production (matching :func:`get_current_user`).
+    """
+
+    if token:
+        return _user_from_token(db, token)
+    if settings.app_env == "production":
+        return None
+    return _ensure_default_user(db)
+
+
 def _resolve_preview_role(requested: str | None) -> str | None:
     """Return the requested workspace role for a development preview request.
 
@@ -74,16 +107,7 @@ def get_current_user(
     elif settings.app_env == "production":
         raise UnauthorizedError("Authentication required.")
 
-    user = db.scalar(select(User).where(User.email == DEFAULT_USER_EMAIL))
-    if user is None:
-        user = User(
-            email=DEFAULT_USER_EMAIL,
-            username=DEFAULT_USER_USERNAME,
-            full_name=DEFAULT_USER_FULL_NAME,
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+    user = _ensure_default_user(db)
 
     preview = _resolve_preview_role(x_developer_role)
     if preview and preview != user.role:
@@ -153,6 +177,7 @@ __all__ = [
     "CurrentUser",
     "DbSession",
     "LawyerUser",
+    "authenticate_token",
     "get_authenticated_user",
     "get_current_user",
     "require_role",
