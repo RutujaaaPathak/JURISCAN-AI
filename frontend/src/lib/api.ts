@@ -1,8 +1,19 @@
 import type { ApiErrorBody } from "@/lib/types"
+import { bearerHeaders } from "@/lib/apiHeaders"
 
 const RAW_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined
 
 export const API_BASE_URL = (RAW_BASE_URL ?? "http://localhost:8000/api").replace(/\/$/, "")
+
+/**
+ * Build a WebSocket URL from an API path. The session token is deliberately
+ * never placed in the URL (it would leak into proxy/server logs); callers send
+ * it in the first socket frame instead.
+ */
+export function websocketUrl(path: string): string {
+  const base = API_BASE_URL.replace(/^http/, "ws")
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`
+}
 
 const AUTH_TOKEN_KEY = "juriscan-auth-token"
 
@@ -32,10 +43,6 @@ export function setAuthToken(token: string | null) {
   }
 }
 
-function authHeaders(): Record<string, string> {
-  return authToken ? { Authorization: `Bearer ${authToken}` } : {}
-}
-
 export class ApiError extends Error {
   status: number
   code: string
@@ -59,7 +66,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(url, {
       headers: {
         Accept: "application/json",
-        ...authHeaders(),
+        ...bearerHeaders(authToken),
         ...(init?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
         ...init?.headers,
       },
