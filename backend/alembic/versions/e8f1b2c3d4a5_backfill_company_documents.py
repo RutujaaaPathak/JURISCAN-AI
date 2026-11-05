@@ -24,7 +24,13 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    from alembic import context
+    if context.is_offline_mode():
+        return
+
     bind = op.get_bind()
+    if bind is None:
+        return
 
     # 1. Update any documents uploaded by users who already have a company_id
     bind.execute(

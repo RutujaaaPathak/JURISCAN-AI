@@ -44,7 +44,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
 
-    with op.batch_alter_table("users", recreate="always") as batch_op:
+    with op.batch_alter_table("users") as batch_op:
         batch_op.add_column(sa.Column("company_id", sa.Integer(), nullable=True))
         batch_op.add_column(sa.Column("company_role", sa.String(length=16), nullable=True))
         batch_op.create_foreign_key(
@@ -62,7 +62,7 @@ def upgrade() -> None:
 
     op.create_index("ix_users_company_id", "users", ["company_id"], unique=False)
 
-    with op.batch_alter_table("documents", recreate="always") as batch_op:
+    with op.batch_alter_table("documents") as batch_op:
         batch_op.add_column(sa.Column("company_id", sa.Integer(), nullable=True))
         batch_op.create_foreign_key(
             "fk_documents_company_id_companies",
@@ -150,7 +150,14 @@ def upgrade() -> None:
         unique=False,
     )
 
+    from alembic import context
+    if context.is_offline_mode():
+        return
+
     bind = op.get_bind()
+    if bind is None:
+        return
+
     rows = bind.execute(
         sa.text(
             "SELECT id, email, full_name, organization_name "
@@ -165,14 +172,25 @@ def upgrade() -> None:
         company_id = companies_by_name.get(key) if key else None
         if company_id is None:
             name = organization or (row["full_name"] or "").strip() or row["email"]
-            result = bind.execute(
-                sa.text(
-                    "INSERT INTO companies (name, created_at, updated_at) "
-                    "VALUES (:name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                ),
-                {"name": name},
-            )
-            company_id = int(result.lastrowid)
+            if bind.dialect.name == "postgresql":
+                result = bind.execute(
+                    sa.text(
+                        "INSERT INTO companies (name, created_at, updated_at) "
+                        "VALUES (:name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
+                        "RETURNING id"
+                    ),
+                    {"name": name},
+                )
+                company_id = int(result.scalar_one())
+            else:
+                result = bind.execute(
+                    sa.text(
+                        "INSERT INTO companies (name, created_at, updated_at) "
+                        "VALUES (:name, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {"name": name},
+                )
+                company_id = int(result.lastrowid)
             if key:
                 companies_by_name[key] = company_id
 
@@ -194,14 +212,14 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_documents_company_id", table_name="documents")
-    with op.batch_alter_table("documents", recreate="always") as batch_op:
+    with op.batch_alter_table("documents") as batch_op:
         batch_op.drop_constraint(
             "fk_documents_company_id_companies", type_="foreignkey"
         )
         batch_op.drop_column("company_id")
 
     op.drop_index("ix_users_company_id", table_name="users")
-    with op.batch_alter_table("users", recreate="always") as batch_op:
+    with op.batch_alter_table("users") as batch_op:
         batch_op.drop_constraint("ck_users_company_role", type_="check")
         batch_op.drop_constraint("fk_users_company_id_companies", type_="foreignkey")
         batch_op.drop_column("company_role")
