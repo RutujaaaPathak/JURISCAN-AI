@@ -110,4 +110,6 @@ def test_all_tables_registered():
         "case_fee_proposals",
         "case_appointments",
         "user_settings",
+        "companies",
+        "company_invitations",
     }

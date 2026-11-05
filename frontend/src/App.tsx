@@ -9,12 +9,14 @@ import { MainLayout } from "@/layouts/MainLayout"
 import { ScrollToTop } from "@/components/layout/ScrollToTop"
 import { AnalysisDetailPage } from "@/pages/AnalysisDetailPage"
 import { AnalysisReportsPage } from "@/pages/AnalysisReportsPage"
+import { AuditReportsPage } from "@/pages/AuditReportsPage"
 import { AvailableCasesPage } from "@/pages/AvailableCasesPage"
 import { CaseDetailPage } from "@/pages/CaseDetailPage"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { DocumentsPage } from "@/pages/DocumentsPage"
 import { FindLawyerPage } from "@/pages/FindLawyerPage"
 import { HomePage } from "@/pages/HomePage"
+import { InvitationAcceptPage } from "@/pages/InvitationAcceptPage"
 import { LawyerProfilePage } from "@/pages/LawyerProfilePage"
 import { PrivacyPage, TermsPage } from "@/pages/LegalPage"
 import { LoginPage } from "@/pages/LoginPage"
@@ -28,6 +30,7 @@ import { PostCasePage } from "@/pages/PostCasePage"
 import { RegisterPage } from "@/pages/RegisterPage"
 import { SettingsPage } from "@/pages/SettingsPage"
 import { SignUpPage } from "@/pages/SignUpPage"
+import { TeamManagementPage } from "@/pages/TeamManagementPage"
 import { UploadPage } from "@/pages/UploadPage"
 
 function App() {
@@ -64,6 +67,7 @@ function App() {
             />
             <Route path="privacy" element={<PrivacyPage />} />
             <Route path="terms" element={<TermsPage />} />
+            <Route path="invite/:token" element={<InvitationAcceptPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Route>
           <Route
@@ -102,6 +106,22 @@ function App() {
             <Route path="upload" element={<UploadPage />} />
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="reports" element={<AnalysisReportsPage />} />
+            <Route
+              path="audit-reports"
+              element={
+                <RequireRole roles={["company", "admin"]}>
+                  <AuditReportsPage />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="team"
+              element={
+                <RequireRole roles={["company", "admin"]}>
+                  <TeamManagementPage />
+                </RequireRole>
+              }
+            />
             <Route
               path="legal-help"
               element={

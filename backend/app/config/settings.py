@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # and marked FAILED so they can be retried instead of getting stuck.
     processing_stale_seconds: int = 900
 
+    # Company team invitations expire after this many hours. A fresh token is
+    # required after expiry; only its hash is stored.
+    company_invitation_ttl_hours: int = 24 * 7
+
     data_dir: Path = BASE_DIR.parent / "data"
     models_dir: Path = BASE_DIR.parent / "models"
 

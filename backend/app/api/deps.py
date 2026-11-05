@@ -8,7 +8,7 @@ from app.config import settings
 from app.core.database import get_db
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_access_token
-from app.models import USER_ROLES, User
+from app.models import COMPANY_ROLES, USER_ROLES, User
 
 DbSession = Annotated[Session, Depends(get_db)]
 
@@ -148,12 +148,53 @@ def require_role(*roles: str):
 
 LawyerUser = Annotated[User, Depends(require_role("lawyer"))]
 
+
+def require_company_member(user: CurrentUser) -> User:
+    """Require an authenticated company account with an active membership.
+
+    Company membership is resolved from the session user, never from a request
+    parameter, so one company can never read or mutate another company's team.
+    """
+
+    if user.role != "company":
+        raise ForbiddenError(
+            "This action is only available to company accounts.",
+            code="insufficient_role",
+            details={"required": ["company"], "actual": user.role},
+        )
+    if user.company_id is None or user.company_role not in COMPANY_ROLES:
+        raise ForbiddenError(
+            "This company workspace has no active membership.",
+            code="company_membership_required",
+        )
+    return user
+
+
+CompanyUser = Annotated[User, Depends(require_company_member)]
+
+
+def require_company_admin(user: CompanyUser) -> User:
+    if user.company_role != "COMPANY_ADMIN":
+        raise ForbiddenError(
+            "Only a company administrator can perform this action.",
+            code="insufficient_company_role",
+            details={"required": ["COMPANY_ADMIN"], "actual": user.company_role},
+        )
+    return user
+
+
+CompanyAdmin = Annotated[User, Depends(require_company_admin)]
+
 __all__ = [
     "AuthenticatedUser",
+    "CompanyAdmin",
+    "CompanyUser",
     "CurrentUser",
     "DbSession",
     "LawyerUser",
     "get_authenticated_user",
     "get_current_user",
+    "require_company_admin",
+    "require_company_member",
     "require_role",
 ]
