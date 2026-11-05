@@ -40,6 +40,10 @@ from app.models import (
     Document,
     User,
 )
+from app.services.realtime import (
+    case_connections,
+    message_public_payload as _message_payload,
+)
 from app.schemas.cases import (
     CaseAppointmentCreate,
     CaseAppointmentRead,
@@ -924,18 +928,6 @@ def _ensure_case_party(case: Case, user: User) -> None:
         )
 
 
-def _message_payload(message: CaseMessage) -> dict:
-    return {
-        "id": message.id,
-        "sender_user_id": message.sender_user_id,
-        "sender_name": _display_name(message.sender),
-        "body": message.body,
-        "read_at": message.read_at,
-        "created_at": message.created_at,
-        "updated_at": message.updated_at,
-    }
-
-
 def _unread_messages(db: DbSession, case_id: int, user_id: int) -> int:
     return (
         db.scalar(
@@ -1108,10 +1100,17 @@ def send_case_message(
         )
     _ensure_case_party(case, user)
 
-    db.add(
-        CaseMessage(case_id=case.id, sender_user_id=user.id, body=payload.body.strip())
+    message = CaseMessage(
+        case_id=case.id, sender_user_id=user.id, body=payload.body.strip()
     )
+    db.add(message)
     db.commit()
+    db.refresh(message)
+    # Persist first, then fan out to the two parties' live sockets. The sender
+    # also receives the event; the frontend deduplicates by message id.
+    case_connections.broadcast_nowait(
+        case.id, {"type": "message", "message": _message_payload(message)}
+    )
     return _messages_payload(db, case, user)
 
 
@@ -1136,6 +1135,17 @@ def mark_case_messages_read(db: DbSession, user: CurrentUser, case_id: int) -> d
         .values(read_at=datetime.now(timezone.utc))
     )
     db.commit()
+    # Let the other party's open workspace reflect the read state live. This is
+    # a notification only; the message history below remains the source of truth.
+    case_connections.broadcast_nowait(
+        case.id,
+        {
+            "type": "read",
+            "case_id": case.id,
+            "reader_user_id": user.id,
+            "read_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     return _messages_payload(db, case, user)
 
 

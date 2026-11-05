@@ -1,4 +1,5 @@
-import { ApiError, api, API_BASE_URL } from "@/lib/api"
+import { ApiError, api, API_BASE_URL, getAuthToken } from "@/lib/api"
+import { reportRequestHeaders } from "@/lib/apiHeaders"
 import type {
   ApiErrorBody,
   DeleteAllResult,
@@ -65,10 +66,11 @@ export function uploadDocument(
 export async function downloadAnalysisReport(
   documentId: number | string,
 ): Promise<Blob> {
-  const url = `${API_BASE_URL}/documents/${documentId}/report`
+  const url = `${API_BASE_URL}/documents/${encodeURIComponent(documentId)}/report`
+  const token = getAuthToken()
   let response: Response
   try {
-    response = await fetch(url, { headers: { Accept: "application/pdf" } })
+    response = await fetch(url, { headers: reportRequestHeaders(token) })
   } catch (error) {
     throw new ApiError(
       `Unable to reach the backend at ${API_BASE_URL}.`,

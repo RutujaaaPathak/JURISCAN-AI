@@ -1,20 +1,38 @@
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.audit_reports import router as audit_reports_router
 from app.api.auth import router as auth_router
+from app.api.calls import router as calls_router
 from app.api.cases import router as cases_router
 from app.api.company import router as company_router
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.lawyers import router as lawyers_router
+from app.api.realtime import router as realtime_router
 from app.api.settings import router as settings_router
 from app.api.status import router as status_router
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import RequestLoggingMiddleware, setup_logging
+from app.services.call_signaling import call_signaling_manager
+from app.services.realtime import case_connections
 
 API_VERSION = "0.1.0"
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # Capture the running event loop so the synchronous HTTP send path can
+    # schedule WebSocket broadcasts onto it (see services.realtime and services.call_signaling).
+    loop = asyncio.get_running_loop()
+    case_connections.bind_loop(loop)
+    call_signaling_manager.bind_loop(loop)
+    yield
 
 
 def create_app() -> FastAPI:
@@ -24,6 +42,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=API_VERSION,
         debug=settings.app_debug,
+        lifespan=lifespan,
     )
 
     app.add_middleware(RequestLoggingMiddleware)
@@ -44,8 +63,10 @@ def create_app() -> FastAPI:
     app.include_router(audit_reports_router, prefix=settings.api_prefix)
     app.include_router(documents_router, prefix=settings.api_prefix)
     app.include_router(cases_router, prefix=settings.api_prefix)
+    app.include_router(calls_router, prefix=settings.api_prefix)
     app.include_router(lawyers_router, prefix=settings.api_prefix)
     app.include_router(settings_router, prefix=settings.api_prefix)
+    app.include_router(realtime_router, prefix=settings.api_prefix)
 
     return app
 

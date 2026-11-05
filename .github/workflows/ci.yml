@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Guards against migration drift: the backend test suite runs on SQLite and
+  # builds its schema from the models (Base.metadata.create_all), so it can
+  # never catch a missing or stale migration. This job applies the real Alembic
+  # migrations to a real PostgreSQL 16 server (matching local/prod) and then
+  # runs `alembic check`, which fails if the migrated schema and the models
+  # disagree - e.g. a table (such as `user_settings`) that exists in the models
+  # but was never migrated, or a hand-edited schema.
+  migrations:
+    name: Migrations (Postgres upgrade + alembic check)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: juriscan_ci
+          POSTGRES_PASSWORD: juriscan_ci
+          POSTGRES_DB: juriscan_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U juriscan_ci -d juriscan_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Consumed by app.config.settings -> app/alembic/env.py. No .env file is
+      # present in CI, so the migration config falls back to this URL.
+      DATABASE_URL: postgresql+psycopg://juriscan_ci:juriscan_ci@localhost:5432/juriscan_ci
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Apply migrations
+        run: python -m alembic upgrade head
+
+      - name: Verify schema matches the models (drift guard)
+        run: python -m alembic check
+
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Run backend tests
+        # conftest.py points DATABASE_URL at a throwaway SQLite file, so these
+        # tests never touch a real database.
+        run: python -m pytest
+
+  frontend:
+    name: Frontend (lint, tests, build)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        # Node 24 runs the TypeScript test files directly (Node's built-in
+        # `node --test` with native type stripping); Node 20 cannot.
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run frontend tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build

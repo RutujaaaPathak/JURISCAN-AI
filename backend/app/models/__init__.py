@@ -1,5 +1,11 @@
 from app.models.analysis import Analysis
 from app.models.base import TimestampMixin
+from app.models.call import (
+    ACTIVE_CALL_STATUSES,
+    CALL_STATUSES,
+    Call,
+    TERMINAL_CALL_STATUSES,
+)
 from app.models.case import (
     APPOINTMENT_STATUSES,
     CASE_CATEGORIES,
@@ -31,14 +37,16 @@ from app.models.settings import ANALYSIS_MODELS, SEVERITY_LEVELS, UserSettings
 from app.models.user import USER_ROLES, User
 
 __all__ = [
+    "ACTIVE_CALL_STATUSES",
     "ANALYSIS_MODELS",
     "APPOINTMENT_STATUSES",
     "Analysis",
+    "CALL_STATUSES",
     "CASE_CATEGORIES",
     "CASE_DECISIONS",
     "CASE_STATUSES",
     "CASE_URGENCIES",
-    "COMPANY_ROLES",
+    "Call",
     "Case",
     "CaseActivity",
     "CaseAppointment",
@@ -51,13 +59,15 @@ __all__ = [
     "Clause",
     "Company",
     "CompanyInvitation",
-    "FEE_PROPOSAL_STATUSES",
+    "COMPANY_ROLES",
     "Document",
+    "FEE_PROPOSAL_STATUSES",
     "INVITATION_STATUSES",
     "LAWYER_VERIFICATION_STATUSES",
     "LawyerProfile",
     "RiskFinding",
     "SEVERITY_LEVELS",
+    "TERMINAL_CALL_STATUSES",
     "TimestampMixin",
     "USER_ROLES",
     "User",

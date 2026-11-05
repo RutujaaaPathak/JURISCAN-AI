@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node --test src/lib/extractedText.test.ts src/lib/caseFilters.test.ts src/lib/lawyerFilters.test.ts src/lib/companyFilters.test.ts",
+    "test": "node --test src/lib/extractedText.test.ts src/lib/caseFilters.test.ts src/lib/lawyerFilters.test.ts src/lib/messages.test.ts src/lib/apiHeaders.test.ts src/lib/callState.test.ts src/lib/iceServers.test.ts src/lib/companyFilters.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

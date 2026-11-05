@@ -1,88 +1,93 @@
-from sqlalchemy.exc import IntegrityError
+import os
+from pathlib import Path
 
-from app.core.database import Base, SessionLocal, engine
+import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.core.database import Base, engine, get_db
+from app.models.analysis import Analysis
 from app.models.document import Document
+from app.models.risk_finding import RiskFinding
 from app.models.user import User
 
 
-def _new_user(session) -> User:
-    user = User(
-        email="audit@example.com",
-        username="audit_user",
-        full_name="Audit User",
-    )
-    session.add(user)
-    session.flush()
-    return user
-
-
 def test_user_crud():
-    session = SessionLocal()
-    try:
-        user = _new_user(session)
+    with Session(engine) as db:
+        user = User(email="test@example.com", username="testuser")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
         assert user.id is not None
+        assert user.is_active is True
+        assert user.created_at is not None
+        assert user.updated_at is not None
 
-        fetched = session.query(User).filter_by(username="audit_user").one()
-        assert fetched.email == "audit@example.com"
+        # Read
+        fetched = db.get(User, user.id)
+        assert fetched is not None
+        assert fetched.username == "testuser"
 
-        session.delete(fetched)
-        session.commit()
-        assert session.query(User).filter_by(username="audit_user").count() == 0
-    finally:
-        session.close()
+        # Update
+        user.username = "updateduser"
+        db.commit()
+        db.refresh(user)
+        assert user.username == "updateduser"
+
+        # Delete
+        db.delete(user)
+        db.commit()
+        assert db.get(User, user.id) is None
 
 
 def test_document_relationship_cascade():
-    session = SessionLocal()
-    try:
-        user = _new_user(session)
+    with Session(engine) as db:
+        user = User(email="author@example.com", username="author")
+        db.add(user)
+        db.commit()
+
         doc = Document(
             user_id=user.id,
-            title="NDA",
+            title="NDA Agreement",
             filename="nda.pdf",
             file_type="pdf",
-            status="PENDING",
         )
-        session.add(doc)
-        session.commit()
-        assert doc.id is not None
+        db.add(doc)
+        db.commit()
 
-        fresh = session.query(Document).filter_by(filename="nda.pdf").one()
-        assert fresh.user.username == "audit_user"
+        assert len(user.documents) == 1
+        assert user.documents[0].title == "NDA Agreement"
 
-        session.delete(fresh)
-        session.commit()
-        assert session.query(Document).filter_by(filename="nda.pdf").count() == 0
-    finally:
-        session.close()
+        # Cascade delete
+        db.delete(user)
+        db.commit()
+        assert db.get(Document, doc.id) is None
 
 
 def test_document_status_check_constraint():
-    session = SessionLocal()
-    try:
-        user = _new_user(session)
+    with Session(engine) as db:
+        user = User(email="u@example.com", username="u")
+        db.add(user)
+        db.commit()
+
+        # In SQLite, CHECK constraints are supported when enabled.
+        # Direct session writes with invalid status will fail validation.
         doc = Document(
             user_id=user.id,
             title="Bad",
-            filename="bad.txt",
-            file_type="txt",
-            status="NOT_A_STATUS",
+            filename="bad.pdf",
+            file_type="pdf",
+            status="INVALID_STATUS",
         )
-        session.add(doc)
-        try:
-            session.commit()
-            raise AssertionError("Check constraint not enforced")
-        except IntegrityError:
-            session.rollback()
-    finally:
-        session.close()
+        db.add(doc)
+        with pytest.raises(IntegrityError):
+            db.commit()
 
 
 def test_get_db_dependency_yields_session():
-    from sqlalchemy import text
-
-    from app.core.database import get_db
-
+    # Verify the get_db generator yields a working session and cleans up.
     gen = get_db()
     session = next(gen)
     try:
@@ -109,6 +114,7 @@ def test_all_tables_registered():
         "case_clarification_messages",
         "case_fee_proposals",
         "case_appointments",
+        "calls",
         "user_settings",
         "companies",
         "company_invitations",
