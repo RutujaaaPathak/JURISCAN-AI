@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { useToast } from "@/components/ui/toast"
 import { ApiError } from "@/lib/api"
-import { uploadDocument } from "@/lib/documents"
+import { DOCUMENTS_CHANGED_EVENT, uploadDocument } from "@/lib/documents"
 import type { DocumentDetail, DuplicateDocumentDetails } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -207,6 +207,9 @@ export function UploadPage() {
 
     setActiveId(null)
     setUploading(false)
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(DOCUMENTS_CHANGED_EVENT))
+    }
     const succeeded = collected.filter((result) => result.status === "ok").length
     const duplicates = collected.filter((result) => result.status === "duplicate").length
     const errors = collected.filter((result) => result.status === "error").length
@@ -274,6 +277,9 @@ export function UploadPage() {
         description: `${item.file.name} was analyzed again.`,
         variant: "success",
       })
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(DOCUMENTS_CHANGED_EVENT))
+      }
     } catch (error) {
       const message = error instanceof ApiError ? error.message : "Upload failed."
       setResults((current) =>
@@ -298,12 +304,20 @@ export function UploadPage() {
     return (
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {result.analysisId !== undefined ? (
-          <Button asChild variant="outline" size="sm">
-            <Link to={`/dashboard/analyses/${result.documentId}`}>
-              <ExternalLink className="size-4" aria-hidden="true" />
-              View existing analysis
-            </Link>
-          </Button>
+          <>
+            <Button asChild variant="outline" size="sm">
+              <Link to={`/dashboard/analyses/${result.documentId}`}>
+                <ExternalLink className="size-4" aria-hidden="true" />
+                View existing analysis
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/dashboard/audit-reports">
+                <FileText className="size-4" aria-hidden="true" />
+                View in Audit Reports
+              </Link>
+            </Button>
+          </>
         ) : null}
         <Button
           variant="secondary"

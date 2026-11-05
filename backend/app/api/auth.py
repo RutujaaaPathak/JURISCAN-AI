@@ -9,8 +9,6 @@ any client-supplied role hint.
 
 from __future__ import annotations
 
-import re
-
 from fastapi import APIRouter, status
 from sqlalchemy import func, select
 
@@ -18,28 +16,11 @@ from app.api.deps import AuthenticatedUser, DbSession
 from app.config import settings
 from app.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError
 from app.core.security import create_access_token, hash_password, verify_password
-from app.models import LawyerProfile, User
+from app.models import Company, LawyerProfile, User
 from app.schemas.auth import AuthUser, LoginRequest, RegisterRequest, TokenResponse
+from app.services.users import normalize_email, unique_username
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-_USERNAME_FALLBACK = "user"
-_USERNAME_MAX = 50
-
-
-def _normalize_email(email: str) -> str:
-    return email.strip().lower()
-
-
-def _unique_username(db: DbSession, email: str) -> str:
-    base = re.sub(r"[^a-z0-9_.-]", "", email.split("@")[0].lower()) or _USERNAME_FALLBACK
-    base = base[:_USERNAME_MAX]
-    candidate = base
-    suffix = 1
-    while db.scalar(select(User.id).where(User.username == candidate)) is not None:
-        suffix += 1
-        candidate = f"{base}{suffix}"
-    return candidate
 
 
 def _token_response(user: User) -> dict:
@@ -55,26 +36,33 @@ def _token_response(user: User) -> dict:
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(db: DbSession, payload: RegisterRequest) -> dict:
-    email = _normalize_email(payload.email)
+    email = normalize_email(payload.email)
     existing = db.scalar(select(User.id).where(func.lower(User.email) == email))
     if existing is not None:
         raise ConflictError(
             "An account with this email already exists.", code="email_taken"
         )
 
+    organization_name = (
+        payload.organization_name.strip()
+        if payload.organization_name and payload.organization_name.strip()
+        else None
+    )
     user = User(
         email=email,
-        username=_unique_username(db, email),
+        username=unique_username(db, email),
         full_name=payload.full_name.strip(),
         hashed_password=hash_password(payload.password),
-        organization_name=(
-            payload.organization_name.strip()
-            if payload.organization_name and payload.organization_name.strip()
-            else None
-        ),
+        organization_name=organization_name,
         role=payload.role,
         is_active=True,
     )
+    if payload.role == "company":
+        company = Company(name=organization_name or payload.full_name.strip())
+        db.add(company)
+        db.flush()
+        user.company_id = company.id
+        user.company_role = "COMPANY_ADMIN"
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -101,7 +89,7 @@ def register(db: DbSession, payload: RegisterRequest) -> dict:
 
 @router.post("/login", response_model=TokenResponse)
 def login(db: DbSession, payload: LoginRequest) -> dict:
-    email = _normalize_email(payload.email)
+    email = normalize_email(payload.email)
     user = db.scalar(select(User).where(func.lower(User.email) == email))
     # A single generic message avoids revealing whether an email is registered.
     if user is None or not verify_password(payload.password, user.hashed_password):

@@ -128,19 +128,27 @@ def delete_document(db: Session, document: Document) -> None:
     delete_upload(storage_path)
 
 
-def delete_all_documents(db: Session, user_id: int) -> int:
-    """Permanently remove every document owned by ``user_id``.
+def delete_all_documents(
+    db: Session, user_id: int, *, company_id: int | None = None
+) -> int:
+    """Permanently remove every document in the caller's deletion scope.
 
-    Deletion is scoped to the owning user so no other account's data is ever
-    touched. Findings, analyses and clauses are removed explicitly, all rows
-    are committed in a single transaction, and the documents' stored files are
-    removed afterwards (only those inside the managed upload directory). The
-    number of deleted documents is returned.
+    Without ``company_id`` deletion is scoped to the owning user so no other
+    account's data is ever touched. Company administrators/managers may pass
+    their company id to remove all company documents. Findings, analyses and
+    clauses are removed explicitly, all rows are committed in a single
+    transaction, and stored files are removed afterwards (only those inside the
+    managed upload directory). The number of deleted documents is returned.
     """
 
-    documents = list(
-        db.scalars(select(Document).where(Document.user_id == user_id)).all()
-    )
+    stmt = select(Document)
+    if company_id is not None:
+        stmt = stmt.where(
+            (Document.company_id == company_id) | (Document.user_id == user_id)
+        )
+    else:
+        stmt = stmt.where(Document.user_id == user_id)
+    documents = list(db.scalars(stmt).all())
     if not documents:
         return 0
 
@@ -413,6 +421,7 @@ def process_upload(
     title: str | None,
     max_size_bytes: int,
     force: bool = False,
+    company_id: int | None = None,
 ) -> Document:
     """Entry point used by the upload endpoint.
 
@@ -437,6 +446,27 @@ def process_upload(
     )
     if existing is not None:
         same_owner = existing.user_id == user.id
+        same_company = (
+            company_id is not None and existing.company_id == company_id
+        )
+        if company_id is not None and existing.company_id is None:
+            # When a company user uploads a previously unassigned contract, attach it
+            # to their company workspace so it automatically appears in audit reports.
+            existing.company_id = company_id
+            db.commit()
+            db.refresh(existing)
+            same_company = True
+        elif company_id is not None and not same_company:
+            # If the document was uploaded by another member of this same company,
+            # unify its company scope.
+            prev_owner = db.get(User, existing.user_id)
+            if prev_owner and prev_owner.company_id == company_id:
+                existing.company_id = company_id
+                db.commit()
+                db.refresh(existing)
+                same_company = True
+
+        same_scope = same_owner or same_company
         completed = _latest_completed_analysis(existing)
         details = (
             {
@@ -446,7 +476,7 @@ def process_upload(
                 "filename": existing.filename,
                 "status": existing.status,
             }
-            if same_owner
+            if same_scope
             else None
         )
         if existing.status == "PROCESSING":
@@ -455,7 +485,7 @@ def process_upload(
                 code="duplicate_document",
                 details=details,
             )
-        if same_owner and (force or completed is None):
+        if same_scope and (force or completed is None):
             # Re-analyze in place when explicitly requested, after a previous
             # failure, or when the stored record never produced a completed
             # analysis. This is what lets a re-uploaded PDF be analyzed again.
@@ -468,22 +498,25 @@ def process_upload(
                 content_type=content_type,
                 file_type=file_type,
             )
-        elif same_owner:
+        elif same_scope:
             raise ConflictError(
                 "This document has already been analyzed.",
                 code="duplicate_document",
                 details=details,
             )
         else:
-            # Another user's identical document: never touch or expose it.
+            # Another user's (or company's) identical document: never touch or
+            # expose it.
             raise ConflictError(
                 "This document has already been uploaded.",
                 code="duplicate_document",
                 details=None,
             )
+
     else:
         document = Document(
             user_id=user.id,
+            company_id=company_id,
             title=document_title,
             filename=filename,
             file_type=file_type,

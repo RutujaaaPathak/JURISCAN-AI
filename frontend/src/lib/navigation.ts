@@ -142,7 +142,6 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: ShieldCheck,
         to: "/dashboard/audit-reports",
         roles: ["company", "admin"],
-        comingSoon: true,
       },
     ],
   },
@@ -154,7 +153,6 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Users,
         to: "/dashboard/team",
         roles: ["company", "admin"],
-        comingSoon: true,
       },
       {
         label: "Audit Log",

@@ -16,6 +16,13 @@ class Document(Base, TimestampMixin):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    # Documents uploaded inside a company workspace belong to that company and
+    # are readable by its members. Null for personal/lawyer documents.
+    company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("companies.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_type: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -37,6 +44,9 @@ class Document(Base, TimestampMixin):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="documents")
+    company: Mapped["Company | None"] = relationship(
+        back_populates="documents", foreign_keys=[company_id]
+    )
     clauses: Mapped[list["Clause"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )

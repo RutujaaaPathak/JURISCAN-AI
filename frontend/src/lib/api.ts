@@ -157,14 +157,55 @@ function uploadRequest<T>(path: string, formData: FormData, init?: UploadOptions
   })
 }
 
+export async function downloadBlob(path: string, fallbackFilename = "download"): Promise<void> {
+  const url = `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`
+  const response = await fetch(url, {
+    headers: {
+      ...bearerHeaders(authToken),
+    },
+  })
+  if (!response.ok) {
+    let errorMsg = `Download failed with status ${response.status}`
+    try {
+      const errJson = await response.json()
+      if (errJson?.error?.message) errorMsg = errJson.error.message
+    } catch {
+      // not json
+    }
+    throw new ApiError(errorMsg, response.status)
+  }
+
+  const blob = await response.blob()
+  const contentDisposition = response.headers.get("content-disposition")
+  let filename = fallbackFilename
+  if (contentDisposition) {
+    const match = /filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']*)['"]?/i.exec(contentDisposition)
+    if (match?.[1]) {
+      filename = decodeURIComponent(match[1])
+    }
+  }
+
+  const blobUrl = window.URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = blobUrl
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  window.URL.revokeObjectURL(blobUrl)
+}
+
 export const api = {
   get: <T>(path: string, init?: RequestInit) => request<T>(path, { ...init, method: "GET" }),
   post: <T>(path: string, body?: unknown, init?: RequestInit) =>
     request<T>(path, { ...init, method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  patch: <T>(path: string, body?: unknown, init?: RequestInit) =>
+    request<T>(path, { ...init, method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T = void>(path: string, init?: RequestInit) =>
     request<T>(path, { ...init, method: "DELETE" }),
   put: <T>(path: string, body?: unknown, init?: RequestInit) =>
     request<T>(path, { ...init, method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   upload: <T>(path: string, formData: FormData, init?: UploadOptions) =>
     uploadRequest<T>(path, formData, init),
+  downloadBlob,
 }

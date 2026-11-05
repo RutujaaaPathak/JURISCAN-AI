@@ -3,8 +3,10 @@
 Covers:
 - Full migration upgrade to head
 - Downgrade to preceding revision (b7e2f1a9c3d4) and subsequent upgrade back to head
+- Company workspace migration upgrade and downgrade
 - Verification of clause hierarchy columns (label, level, parent_id)
 - Verification of data preservation across migration upgrades
+- Schema consistency check against Base.metadata (alembic check)
 """
 
 import os
@@ -26,6 +28,7 @@ def migration_db():
     backend_dir = Path(__file__).resolve().parent.parent
     ini_path = backend_dir / "alembic.ini"
     cfg = Config(str(ini_path))
+    cfg.set_main_option("script_location", str(backend_dir / "alembic"))
     cfg.set_main_option("sqlalchemy.url", db_url)
 
     yield cfg, db_url
@@ -75,6 +78,54 @@ def test_migration_upgrade_and_downgrade(migration_db):
     assert "parent_id" in columns_up
 
     engine.dispose()
+
+
+def test_company_workspace_migration_upgrade_and_downgrade(migration_db):
+    cfg, db_url = migration_db
+    engine = create_engine(db_url)
+
+    # 1. Upgrade to head
+    command.upgrade(cfg, "head")
+
+    inspector = inspect(engine)
+    table_names = inspector.get_table_names()
+    assert "companies" in table_names
+    assert "company_invitations" in table_names
+
+    user_cols = {col["name"] for col in inspector.get_columns("users")}
+    assert "company_id" in user_cols
+    assert "company_role" in user_cols
+
+    doc_cols = {col["name"] for col in inspector.get_columns("documents")}
+    assert "company_id" in doc_cols
+
+    # 2. Downgrade to prior revision (a4f7c2d9e1b8)
+    command.downgrade(cfg, "a4f7c2d9e1b8")
+    engine.dispose()
+    engine = create_engine(db_url)
+    inspector = inspect(engine)
+
+    table_names_down = inspector.get_table_names()
+    assert "companies" not in table_names_down
+    assert "company_invitations" not in table_names_down
+
+    user_cols_down = {col["name"] for col in inspector.get_columns("users")}
+    assert "company_id" not in user_cols_down
+    assert "company_role" not in user_cols_down
+
+    doc_cols_down = {col["name"] for col in inspector.get_columns("documents")}
+    assert "company_id" not in doc_cols_down
+
+    # 3. Upgrade back to head
+    command.upgrade(cfg, "head")
+    engine.dispose()
+
+
+def test_alembic_check_metadata_consistency(migration_db):
+    cfg, _ = migration_db
+    command.upgrade(cfg, "head")
+    # Verify no model drift exists between Base.metadata and migrations
+    command.check(cfg)
 
 
 def test_migration_preserves_existing_data(migration_db):

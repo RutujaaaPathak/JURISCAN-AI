@@ -12,6 +12,8 @@ import { createContext, useContext } from "react"
 import { api, setAuthToken } from "@/lib/api"
 import type { UserRole } from "@/lib/roles"
 
+export type CompanyRole = "COMPANY_ADMIN" | "MANAGER" | "MEMBER" | "VIEWER"
+
 export interface AuthUser {
   id: number
   email: string
@@ -20,6 +22,8 @@ export interface AuthUser {
   role: UserRole
   organization_name: string | null
   is_active: boolean
+  company_id?: number | null
+  company_role?: CompanyRole | null
 }
 
 /** Roles a visitor may self-register for. Admin is provisioned operationally. */
