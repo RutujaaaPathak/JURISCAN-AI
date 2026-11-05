@@ -364,3 +364,37 @@ export interface NotificationItem {
   case_id: number | null
   created_at: string
 }
+
+export interface CallRead {
+  id: number
+  case_id: number
+  caller_id: number
+  receiver_id: number
+  caller_name: string | null
+  receiver_name: string | null
+  status: "RINGING" | "ACCEPTED" | "REJECTED" | "MISSED" | "ENDED" | "FAILED"
+  answered_at: string | null
+  ended_at: string | null
+  duration: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CallListResponse {
+  items: CallRead[]
+  total: number
+}
+
+export interface ActiveCallResponse {
+  active_call: CallRead | null
+}
+
+export type CallState =
+  | "idle"
+  | "requesting_permission"
+  | "calling"
+  | "ringing"
+  | "connecting"
+  | "connected"
+  | "ended"
+  | "failed"

@@ -117,6 +117,9 @@ class Case(Base, TimestampMixin):
     appointments: Mapped[list["CaseAppointment"]] = relationship(
         back_populates="case", cascade="all, delete-orphan"
     )
+    calls: Mapped[list["Call"]] = relationship(
+        back_populates="case", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint(f"category IN ({_CATEGORY_SQL})", name="ck_cases_category"),

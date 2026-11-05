@@ -1,3 +1,5 @@
+import { ActiveCallModal } from "@/components/cases/ActiveCallModal"
+import { CaseCallsTab } from "@/components/cases/CaseCallsTab"
 import {
   CalendarClock,
   Check,
@@ -7,6 +9,8 @@ import {
   Info,
   Loader2,
   MessageSquare,
+  Phone,
+  PhoneCall,
   Send,
   X,
 } from "lucide-react"
@@ -25,8 +29,10 @@ import { useRole } from "@/context/RoleContext"
 import { useAsync } from "@/hooks/useAsync"
 import { useCaseMessages } from "@/hooks/useCaseMessages"
 import type { ChatConnection } from "@/hooks/useCaseMessages"
+import { useVoiceCall } from "@/hooks/useVoiceCall"
 import { ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { canStartCall } from "@/lib/callState"
 import {
   acceptCaseFee,
   cancelCaseAppointment,
@@ -667,39 +673,88 @@ export function CaseWorkspace({
   onChanged: () => void
 }) {
   const { role } = useRole()
+  const { user } = useAuth()
   const canAttach = role !== "lawyer"
 
+  const isAssigned = detail.assigned_lawyer_id != null
+  const isParty =
+    user?.id === detail.posted_by_user_id || user?.id === detail.assigned_lawyer_id
+  const canUseCalls = isAssigned && isParty
+  const callController = useVoiceCall(caseId, user, canUseCalls)
+  const callAvailable =
+    canUseCalls &&
+    callController.wsStatus === "online" &&
+    canStartCall(callController.callState)
+
+  const otherPartyLabel =
+    user?.id === detail.assigned_lawyer_id
+      ? (detail.posted_by_name ?? "Client")
+      : (detail.assigned_lawyer_name ?? "Counsel")
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Private workspace</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Visible only to you and the other party on this case.
-        </p>
-      </CardHeader>
-      <CardContent>
-        <Tabs defaultValue="messages">
-          <TabsList className="flex-wrap">
-            <TabsTrigger value="messages">
-              <MessageSquare className="size-3.5" aria-hidden="true" />
-              Messages
-            </TabsTrigger>
-            <TabsTrigger value="documents">
-              <FileText className="size-3.5" aria-hidden="true" />
-              Documents
-            </TabsTrigger>
-            <TabsTrigger value="fees">
-              <HandCoins className="size-3.5" aria-hidden="true" />
-              Fees
-            </TabsTrigger>
-            <TabsTrigger value="consultations">
-              <CalendarClock className="size-3.5" aria-hidden="true" />
-              Consultations
-            </TabsTrigger>
-          </TabsList>
+    <>
+      {canUseCalls ? (
+        <ActiveCallModal controller={callController} caseTitle={detail.title} />
+      ) : null}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Private workspace</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Visible only to you and the other party on this case.
+            </p>
+          </div>
+          {canUseCalls ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => void callController.startCall()}
+              disabled={!callAvailable}
+              title={
+                callController.wsStatus === "online"
+                  ? undefined
+                  : "Waiting for the call signaling connection."
+              }
+            >
+              <PhoneCall className="size-3.5 text-primary" />
+              Call {otherPartyLabel}
+            </Button>
+          ) : null}
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="messages">
+            <TabsList className="flex-wrap">
+              <TabsTrigger value="messages">
+                <MessageSquare className="size-3.5" aria-hidden="true" />
+                Messages
+              </TabsTrigger>
+              <TabsTrigger value="calls">
+                <Phone className="size-3.5" aria-hidden="true" />
+                Calls
+                {callController.incomingCall ? (
+                  <span className="ml-1 size-2 rounded-full bg-emerald-500 animate-ping" />
+                ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="documents">
+                <FileText className="size-3.5" aria-hidden="true" />
+                Documents
+              </TabsTrigger>
+              <TabsTrigger value="fees">
+                <HandCoins className="size-3.5" aria-hidden="true" />
+                Fees
+              </TabsTrigger>
+              <TabsTrigger value="consultations">
+                <CalendarClock className="size-3.5" aria-hidden="true" />
+                Consultations
+              </TabsTrigger>
+            </TabsList>
 
           <TabsContent value="messages" className="mt-4">
             <MessagesTab caseId={caseId} />
+          </TabsContent>
+          <TabsContent value="calls" className="mt-4">
+            <CaseCallsTab detail={detail} controller={callController} />
           </TabsContent>
           <TabsContent value="documents" className="mt-4">
             <DocumentsTab
@@ -718,5 +773,6 @@ export function CaseWorkspace({
         </Tabs>
       </CardContent>
     </Card>
+    </>
   )
 }
