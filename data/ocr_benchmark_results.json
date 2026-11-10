@@ -1,0 +1,1261 @@
+{
+  "version": "1.0",
+  "disclaimer": "Synthetic legal text created solely for OCR regression testing. It is not legal advice, contains no client data, and must not be treated as a verified legal reference.",
+  "environment": {
+    "measured_at": "2026-11-05T18:26:39.764162+00:00",
+    "python": "3.13.15",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "packages": {
+      "rapidocr-onnxruntime": "1.2.3",
+      "pymupdf": "1.28.2",
+      "opencv-python": "5.0.0",
+      "numpy": "2.5.4",
+      "pypdf": "5.9.0"
+    },
+    "settings": {
+      "ocr_enabled": true,
+      "ocr_render_dpi": 200,
+      "ocr_preprocess_enabled": true,
+      "ocr_deskew_enabled": true,
+      "ocr_rotation_detection_enabled": true,
+      "ocr_layout_analysis_enabled": true,
+      "ocr_low_confidence_threshold": 0.75,
+      "ocr_quality_warning_threshold": 0.65,
+      "ocr_native_recheck_threshold": 0.45,
+      "ocr_merge_margin": 0.08
+    }
+  },
+  "aggregate": {
+    "case_count": 9,
+    "ok_count": 9,
+    "error_count": 0,
+    "mean_cer": 0.005793,
+    "mean_wer": 0.015436,
+    "mean_word_order_accuracy": 0.989883,
+    "mean_risk_recall": 1.0,
+    "mean_page_confidence": 0.895196,
+    "mean_source_accuracy": 1.0,
+    "total_seconds": 44.978454,
+    "peak_memory_mb": 268.22,
+    "by_category": {
+      "blurry_scan": {
+        "cases": 1,
+        "mean_cer": 0.019185,
+        "mean_wer": 0.047619,
+        "mean_word_order_accuracy": 0.984127,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.9125,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 1,
+        "mean_seconds": 5.276104
+      },
+      "clean_scanned_contract": {
+        "cases": 1,
+        "mean_cer": 0.001198,
+        "mean_wer": 0.008,
+        "mean_word_order_accuracy": 0.992,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.9098,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 0,
+        "mean_seconds": 8.981858
+      },
+      "long_document": {
+        "cases": 1,
+        "mean_cer": 0.001776,
+        "mean_wer": 0.011561,
+        "mean_word_order_accuracy": 0.988439,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.913967,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 0,
+        "mean_seconds": 9.147639
+      },
+      "mixed_native_and_scanned": {
+        "cases": 1,
+        "mean_cer": 0.001198,
+        "mean_wer": 0.008,
+        "mean_word_order_accuracy": 0.992,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.9031,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 0,
+        "mean_seconds": 2.970923
+      },
+      "multi_column_layout": {
+        "cases": 1,
+        "mean_cer": 0.0,
+        "mean_wer": 0.0,
+        "mean_word_order_accuracy": 1.0,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.9056,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 0,
+        "mean_seconds": 2.678426
+      },
+      "rotated_scan": {
+        "cases": 1,
+        "mean_cer": 0.002398,
+        "mean_wer": 0.015873,
+        "mean_word_order_accuracy": 0.984127,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.9028,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 0,
+        "mean_seconds": 6.278563
+      },
+      "skewed_scan": {
+        "cases": 1,
+        "mean_cer": 0.004796,
+        "mean_wer": 0.031746,
+        "mean_word_order_accuracy": 0.968254,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.904,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 0,
+        "mean_seconds": 4.034862
+      },
+      "stamped_scan": {
+        "cases": 1,
+        "mean_cer": 0.021583,
+        "mean_wer": 0.016129,
+        "mean_word_order_accuracy": 1.0,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.9116,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 0,
+        "mean_seconds": 3.782365
+      },
+      "table_layout": {
+        "cases": 1,
+        "mean_cer": 0.0,
+        "mean_wer": 0.0,
+        "mean_word_order_accuracy": 1.0,
+        "mean_risk_recall": 1.0,
+        "mean_page_confidence": 0.7934,
+        "mean_source_accuracy": 1.0,
+        "cases_requiring_review": 1,
+        "mean_seconds": 1.827714
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "clean_contract",
+      "category": "clean_scanned_contract",
+      "description": "Two-page clean scan with numbered clauses and risk wording.",
+      "tags": [
+        "scan",
+        "multi-page",
+        "clauses"
+      ],
+      "status": "ok",
+      "pdf_sha256": "c8c21b1c704267ee0306b4bddb58bb85e78737466bdc9a56d5d0ecc95af342f8",
+      "pdf_build_seconds": 0.32962,
+      "extract_seconds": 8.652238,
+      "total_seconds": 8.981858,
+      "peak_memory_mb": 174.54,
+      "document": {
+        "cer": 0.001198,
+        "wer": 0.008,
+        "word_order_accuracy": 0.992,
+        "characters": 834,
+        "words": 125
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.0,
+          "wer": 0.0,
+          "word_order_accuracy": 1.0,
+          "confidence": 0.9165,
+          "expected_text": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt.",
+          "actual_text": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation In this Agreement the following definitions apply unless the context requires otherwise.\n\n2. Services\n\n2.1 The Supplier shall provide the Services described in each Statement of Work.\n\n2.2 The Supplier shall perform the Services with reasonable skill and care.\n\n3. Payment Terms The Customer shall pay each undisputed invoice within ninety (90) days of receipt."
+        },
+        {
+          "page_number": 2,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.002398,
+          "wer": 0.015873,
+          "word_order_accuracy": 0.984127,
+          "confidence": 0.9031,
+          "expected_text": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination.",
+          "actual_text": "4. Limitation of Liability The Supplier shall have unlimited liability for all direct and indirect losses.\n\n5. Indemnity The Supplier shall indemnify and hold harmless the Customer from all claims without limit.\n\n6. Term and Renewal This Agreement shall automatically renew for successive terms of twelve months.\n\n7. Restrictive Covenant The Employee shall not compete with the Employer for six months after termination"
+        }
+      ],
+      "sources": {
+        "expected": [
+          "ocr",
+          "ocr"
+        ],
+        "actual": [
+          "ocr",
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          1,
+          2
+        ]
+      },
+      "segmentation": {
+        "segment_count": 10,
+        "expected_marker_count": 7,
+        "found_marker_count": 7,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": [
+          26,
+          149,
+          318,
+          418,
+          525,
+          629,
+          729
+        ]
+      },
+      "page_offsets": {
+        "page_count": 2,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [
+          {
+            "marker": "1. Definitions and Interpretation",
+            "expected_page": 1,
+            "offset": 27,
+            "actual_page": 1,
+            "ok": true
+          },
+          {
+            "marker": "4. Limitation of Liability",
+            "expected_page": 2,
+            "offset": 424,
+            "actual_page": 2,
+            "ok": true
+          }
+        ],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.9098,
+        "document_low_confidence_ratio": 0.0,
+        "warnings": [],
+        "mean_page_confidence": 0.9098,
+        "clauses_requiring_review": 0,
+        "clause_count": 10,
+        "review_findings": 0,
+        "review_clause_indexes": []
+      },
+      "risk": {
+        "expected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "detected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "true_positive_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt.",
+        "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+      ]
+    },
+    {
+      "case_id": "blurry_page",
+      "category": "blurry_scan",
+      "description": "Low-quality blurred scan with sensor noise.",
+      "tags": [
+        "scan",
+        "blur",
+        "noise",
+        "low-quality"
+      ],
+      "status": "ok",
+      "pdf_sha256": "f1afbaf2539fe02d536554834e0f4f39d810fbc44315650b843dc33c36565b3c",
+      "pdf_build_seconds": 0.62358,
+      "extract_seconds": 4.652524,
+      "total_seconds": 5.276104,
+      "peak_memory_mb": 268.22,
+      "document": {
+        "cer": 0.019185,
+        "wer": 0.047619,
+        "word_order_accuracy": 0.984127,
+        "characters": 424,
+        "words": 65
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.019185,
+          "wer": 0.047619,
+          "word_order_accuracy": 0.984127,
+          "confidence": 0.9125,
+          "expected_text": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination.",
+          "actual_text": "4. Limitation of Liability The Supplier shalt have unlimited liability for all direct and indirect losses.\n\n5. Indemnity The Supplier shall indemnify and hold harmless the Customer from all claims without limit.\n\n6. Term and Renewal This Agreement shall automatically renew for successive terms of twelve months.\n\n7. Restrictive Covenant The Employee shall not compete with the Employer for six months after termination.\n\n..\n\n++."
+        }
+      ],
+      "sources": {
+        "expected": [
+          "ocr"
+        ],
+        "actual": [
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          1
+        ]
+      },
+      "segmentation": {
+        "segment_count": 4,
+        "expected_marker_count": 4,
+        "found_marker_count": 4,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": [
+          0,
+          107,
+          211,
+          311
+        ]
+      },
+      "page_offsets": {
+        "page_count": 1,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [
+          {
+            "marker": "4. Limitation of Liability",
+            "expected_page": 1,
+            "offset": 0,
+            "actual_page": 1,
+            "ok": true
+          }
+        ],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.9125,
+        "document_low_confidence_ratio": 0.1429,
+        "warnings": [],
+        "mean_page_confidence": 0.9125,
+        "clauses_requiring_review": 1,
+        "clause_count": 4,
+        "review_findings": 1,
+        "review_clause_indexes": [
+          3
+        ]
+      },
+      "risk": {
+        "expected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "detected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "true_positive_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+      ]
+    },
+    {
+      "case_id": "rotated_page",
+      "category": "rotated_scan",
+      "description": "Sideways scan that must be rotated upright before OCR.",
+      "tags": [
+        "scan",
+        "rotation",
+        "orientation"
+      ],
+      "status": "ok",
+      "pdf_sha256": "cf4ec60454a37a43e053035eaf29fc9ab9e72c1189071594d2028b02ec64a5ff",
+      "pdf_build_seconds": 0.231561,
+      "extract_seconds": 6.047002,
+      "total_seconds": 6.278563,
+      "peak_memory_mb": 182.436,
+      "document": {
+        "cer": 0.002398,
+        "wer": 0.015873,
+        "word_order_accuracy": 0.984127,
+        "characters": 416,
+        "words": 63
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.002398,
+          "wer": 0.015873,
+          "word_order_accuracy": 0.984127,
+          "confidence": 0.9028,
+          "expected_text": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination.",
+          "actual_text": "4. Limitation of Liability The Supplier shall have unlimited liability for all direct and indirect losses.\n\n5. Indemnity The Supplier shall indemnify and hold harmless the Customer from all claims without limit.\n\n6. Term and Renewal This Agreement shall automatically renew for successive terms of twelve months.\n\n7. Restrictive Covenant The Employee shall not compete with the Employer for six months after termination"
+        }
+      ],
+      "sources": {
+        "expected": [
+          "ocr"
+        ],
+        "actual": [
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          1
+        ]
+      },
+      "segmentation": {
+        "segment_count": 4,
+        "expected_marker_count": 4,
+        "found_marker_count": 4,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": [
+          0,
+          107,
+          211,
+          311
+        ]
+      },
+      "page_offsets": {
+        "page_count": 1,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [
+          {
+            "marker": "4. Limitation of Liability",
+            "expected_page": 1,
+            "offset": 0,
+            "actual_page": 1,
+            "ok": true
+          }
+        ],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.9028,
+        "document_low_confidence_ratio": 0.0,
+        "warnings": [],
+        "mean_page_confidence": 0.9028,
+        "clauses_requiring_review": 0,
+        "clause_count": 4,
+        "review_findings": 0,
+        "review_clause_indexes": []
+      },
+      "risk": {
+        "expected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "detected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "true_positive_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+      ]
+    },
+    {
+      "case_id": "skewed_page",
+      "category": "skewed_scan",
+      "description": "Four-degree skewed scan that requires deskewing.",
+      "tags": [
+        "scan",
+        "skew",
+        "deskew"
+      ],
+      "status": "ok",
+      "pdf_sha256": "4f25261912ae883630cc8be5dc9b4880156c53563078f035a87229e44e78fe4f",
+      "pdf_build_seconds": 0.150873,
+      "extract_seconds": 3.883989,
+      "total_seconds": 4.034862,
+      "peak_memory_mb": 192.924,
+      "document": {
+        "cer": 0.004796,
+        "wer": 0.031746,
+        "word_order_accuracy": 0.968254,
+        "characters": 418,
+        "words": 63
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.004796,
+          "wer": 0.031746,
+          "word_order_accuracy": 0.968254,
+          "confidence": 0.904,
+          "expected_text": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination.",
+          "actual_text": "4. Limitation of Liability The Supplier shall have unlimited liability for all direct and indirect losses.\n\n5. Indemnity The Supplier shall indemnifty and hold harmiess the Customer from all claims without limit.\n\n6. Term and Renewal This Agreement shall automatically renew for successive terms of twelve months.\n\n7. Restrictive Covenant The Employee shall not compete with the Employer for six months after termination."
+        }
+      ],
+      "sources": {
+        "expected": [
+          "ocr"
+        ],
+        "actual": [
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          1
+        ]
+      },
+      "segmentation": {
+        "segment_count": 4,
+        "expected_marker_count": 4,
+        "found_marker_count": 4,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": [
+          0,
+          107,
+          212,
+          312
+        ]
+      },
+      "page_offsets": {
+        "page_count": 1,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [
+          {
+            "marker": "4. Limitation of Liability",
+            "expected_page": 1,
+            "offset": 0,
+            "actual_page": 1,
+            "ok": true
+          }
+        ],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.904,
+        "document_low_confidence_ratio": 0.0,
+        "warnings": [],
+        "mean_page_confidence": 0.904,
+        "clauses_requiring_review": 0,
+        "clause_count": 4,
+        "review_findings": 0,
+        "review_clause_indexes": []
+      },
+      "risk": {
+        "expected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "detected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "true_positive_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+      ]
+    },
+    {
+      "case_id": "two_column_page",
+      "category": "multi_column_layout",
+      "description": "Two-column clause layout with a vertical gutter.",
+      "tags": [
+        "scan",
+        "layout",
+        "columns",
+        "reading-order"
+      ],
+      "status": "ok",
+      "pdf_sha256": "c7200f04d43be95f780784274f369b3ea6da0f2de2a6c95553d3c42b891060f1",
+      "pdf_build_seconds": 0.206343,
+      "extract_seconds": 2.472083,
+      "total_seconds": 2.678426,
+      "peak_memory_mb": 171.515,
+      "document": {
+        "cer": 0.0,
+        "wer": 0.0,
+        "word_order_accuracy": 1.0,
+        "characters": 210,
+        "words": 32
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.0,
+          "wer": 0.0,
+          "word_order_accuracy": 1.0,
+          "confidence": 0.9056,
+          "expected_text": "4. Limitation of Liability\nThe Supplier shall have\nunlimited liability for all\ndirect and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify\nand hold harmless the Customer\nfrom all claims without limit.",
+          "actual_text": "4. Limitation of Liability The Supplier shall have unlimited liability for all direct and indirect losses.\n\n5. Indemnity The Supplier shall indemnify and hold harmless the Customer from all claims without limit."
+        }
+      ],
+      "sources": {
+        "expected": [
+          "ocr"
+        ],
+        "actual": [
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          1
+        ]
+      },
+      "segmentation": {
+        "segment_count": 2,
+        "expected_marker_count": 2,
+        "found_marker_count": 2,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": [
+          0,
+          107
+        ]
+      },
+      "page_offsets": {
+        "page_count": 1,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [
+          {
+            "marker": "4. Limitation of Liability",
+            "expected_page": 1,
+            "offset": 0,
+            "actual_page": 1,
+            "ok": true
+          }
+        ],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.9056,
+        "document_low_confidence_ratio": 0.0,
+        "warnings": [],
+        "mean_page_confidence": 0.9056,
+        "clauses_requiring_review": 0,
+        "clause_count": 2,
+        "review_findings": 0,
+        "review_clause_indexes": []
+      },
+      "risk": {
+        "expected_codes": [
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "detected_codes": [
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "true_positive_codes": [
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "4. Limitation of Liability\nThe Supplier shall have\nunlimited liability for all\ndirect and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify\nand hold harmless the Customer\nfrom all claims without limit."
+      ]
+    },
+    {
+      "case_id": "table_page",
+      "category": "table_layout",
+      "description": "Schedule-style table whose rows must not be interleaved.",
+      "tags": [
+        "scan",
+        "layout",
+        "table"
+      ],
+      "status": "ok",
+      "pdf_sha256": "e86dd53fda0264fd9da1750f27280cca20c0d6874d61de50f993b6cb6bed2f55",
+      "pdf_build_seconds": 0.20365,
+      "extract_seconds": 1.624064,
+      "total_seconds": 1.827714,
+      "peak_memory_mb": 171.503,
+      "document": {
+        "cer": 0.0,
+        "wer": 0.0,
+        "word_order_accuracy": 1.0,
+        "characters": 63,
+        "words": 17
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.0,
+          "wer": 0.0,
+          "word_order_accuracy": 1.0,
+          "confidence": 0.7934,
+          "expected_text": "Party | Amount | Term\n\nAlice | 100 | 30 days\n\nBob | 250 | 60 days",
+          "actual_text": "Party | Amount | Term\n\nAlice | 100 | 30 days\n\nBob | 250 | 60 days"
+        }
+      ],
+      "sources": {
+        "expected": [
+          "ocr"
+        ],
+        "actual": [
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          1
+        ]
+      },
+      "segmentation": {
+        "segment_count": 2,
+        "expected_marker_count": 0,
+        "found_marker_count": 0,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": []
+      },
+      "page_offsets": {
+        "page_count": 1,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.7934,
+        "document_low_confidence_ratio": 0.4444,
+        "warnings": [
+          "4 of 9 OCR text lines are low-confidence."
+        ],
+        "mean_page_confidence": 0.7934,
+        "clauses_requiring_review": 2,
+        "clause_count": 2,
+        "review_findings": 0,
+        "review_clause_indexes": [
+          0,
+          1
+        ]
+      },
+      "risk": {
+        "expected_codes": [],
+        "detected_codes": [],
+        "true_positive_codes": [],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "Party | Amount | Term\n\nAlice | 100 | 30 days\n\nBob | 250 | 60 days"
+      ]
+    },
+    {
+      "case_id": "stamped_page",
+      "category": "stamped_scan",
+      "description": "Clean page with a red approval stamp over the margin.",
+      "tags": [
+        "scan",
+        "stamp",
+        "overlay"
+      ],
+      "status": "ok",
+      "pdf_sha256": "27f939c266f3cfb2c55d1a867e4a76bc58cf76fcd1d067649a251547cda398a4",
+      "pdf_build_seconds": 0.334647,
+      "extract_seconds": 3.447718,
+      "total_seconds": 3.782365,
+      "peak_memory_mb": 171.595,
+      "document": {
+        "cer": 0.021583,
+        "wer": 0.016129,
+        "word_order_accuracy": 1.0,
+        "characters": 426,
+        "words": 63
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.021583,
+          "wer": 0.016129,
+          "word_order_accuracy": 1.0,
+          "confidence": 0.9116,
+          "expected_text": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt.",
+          "actual_text": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation In this Agreement the following definitions apply unless the context requires otherwise.\n\n2. Services\n\n2.1 The Supplier shall provide the Services described in each Statement of Work.\n\n2.2 The Supplier shall perform the Services with reasonable skill and care.\n\n3. Payment Terms The Customer shall pay each undisputed invoice within ninety (90) days of receipt.\n\nAPPROVED"
+        }
+      ],
+      "sources": {
+        "expected": [
+          "ocr"
+        ],
+        "actual": [
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          1
+        ]
+      },
+      "segmentation": {
+        "segment_count": 6,
+        "expected_marker_count": 3,
+        "found_marker_count": 3,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": [
+          26,
+          149,
+          318
+        ]
+      },
+      "page_offsets": {
+        "page_count": 1,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [
+          {
+            "marker": "1. Definitions and Interpretation",
+            "expected_page": 1,
+            "offset": 27,
+            "actual_page": 1,
+            "ok": true
+          }
+        ],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.9116,
+        "document_low_confidence_ratio": 0.0,
+        "warnings": [],
+        "mean_page_confidence": 0.9116,
+        "clauses_requiring_review": 0,
+        "clause_count": 6,
+        "review_findings": 0,
+        "review_clause_indexes": []
+      },
+      "risk": {
+        "expected_codes": [
+          "EXTENDED_PAYMENT_TERMS"
+        ],
+        "detected_codes": [
+          "EXTENDED_PAYMENT_TERMS"
+        ],
+        "true_positive_codes": [
+          "EXTENDED_PAYMENT_TERMS"
+        ],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt."
+      ]
+    },
+    {
+      "case_id": "mixed_native_scan",
+      "category": "mixed_native_and_scanned",
+      "description": "Native-text page followed by an image-only scanned page.",
+      "tags": [
+        "mixed",
+        "native",
+        "scan",
+        "merge"
+      ],
+      "status": "ok",
+      "pdf_sha256": "c77768dc4d645c3c363844cf2ebbfb01ba573170fd2527fcc8ba0feb80ebdf2a",
+      "pdf_build_seconds": 0.245366,
+      "extract_seconds": 2.725557,
+      "total_seconds": 2.970923,
+      "peak_memory_mb": 171.654,
+      "document": {
+        "cer": 0.001198,
+        "wer": 0.008,
+        "word_order_accuracy": 0.992,
+        "characters": 834,
+        "words": 125
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "native",
+          "expected_source": "native",
+          "cer": 0.0,
+          "wer": 0.0,
+          "word_order_accuracy": 1.0,
+          "confidence": null,
+          "expected_text": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt.",
+          "actual_text": "MASTER SERVICES AGREEMENT\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt."
+        },
+        {
+          "page_number": 2,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.002398,
+          "wer": 0.015873,
+          "word_order_accuracy": 0.984127,
+          "confidence": 0.9031,
+          "expected_text": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination.",
+          "actual_text": "4. Limitation of Liability The Supplier shall have unlimited liability for all direct and indirect losses.\n\n5. Indemnity The Supplier shall indemnify and hold harmless the Customer from all claims without limit.\n\n6. Term and Renewal This Agreement shall automatically renew for successive terms of twelve months.\n\n7. Restrictive Covenant The Employee shall not compete with the Employer for six months after termination"
+        }
+      ],
+      "sources": {
+        "expected": [
+          "native",
+          "ocr"
+        ],
+        "actual": [
+          "native",
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          2
+        ]
+      },
+      "segmentation": {
+        "segment_count": 10,
+        "expected_marker_count": 7,
+        "found_marker_count": 7,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": [
+          26,
+          149,
+          318,
+          418,
+          525,
+          629,
+          729
+        ]
+      },
+      "page_offsets": {
+        "page_count": 2,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [
+          {
+            "marker": "1. Definitions and Interpretation",
+            "expected_page": 1,
+            "offset": 26,
+            "actual_page": 1,
+            "ok": true
+          },
+          {
+            "marker": "4. Limitation of Liability",
+            "expected_page": 2,
+            "offset": 419,
+            "actual_page": 2,
+            "ok": true
+          }
+        ],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.9031,
+        "document_low_confidence_ratio": 0.0,
+        "warnings": [],
+        "mean_page_confidence": 0.9031,
+        "clauses_requiring_review": 0,
+        "clause_count": 10,
+        "review_findings": 0,
+        "review_clause_indexes": []
+      },
+      "risk": {
+        "expected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "detected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "true_positive_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt.",
+        "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+      ]
+    },
+    {
+      "case_id": "long_contract",
+      "category": "long_document",
+      "description": "Three-page scan exercising repeated page assembly and offsets.",
+      "tags": [
+        "scan",
+        "long",
+        "multi-page",
+        "offsets"
+      ],
+      "status": "ok",
+      "pdf_sha256": "2f33428191d9b5e0b83e2a2e396bbf71e64a37908eb152c2e0a217b9a510133c",
+      "pdf_build_seconds": 0.519953,
+      "extract_seconds": 8.627685,
+      "total_seconds": 9.147639,
+      "peak_memory_mb": 214.417,
+      "document": {
+        "cer": 0.001776,
+        "wer": 0.011561,
+        "word_order_accuracy": 0.988439,
+        "characters": 1124,
+        "words": 173
+      },
+      "pages": [
+        {
+          "page_number": 1,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.0,
+          "wer": 0.0,
+          "word_order_accuracy": 1.0,
+          "confidence": 0.9165,
+          "expected_text": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt.",
+          "actual_text": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation In this Agreement the following definitions apply unless the context requires otherwise.\n\n2. Services\n\n2.1 The Supplier shall provide the Services described in each Statement of Work.\n\n2.2 The Supplier shall perform the Services with reasonable skill and care.\n\n3. Payment Terms The Customer shall pay each undisputed invoice within ninety (90) days of receipt."
+        },
+        {
+          "page_number": 2,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.002398,
+          "wer": 0.015873,
+          "word_order_accuracy": 0.984127,
+          "confidence": 0.9031,
+          "expected_text": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination.",
+          "actual_text": "4. Limitation of Liability The Supplier shall have unlimited liability for all direct and indirect losses.\n\n5. Indemnity The Supplier shall indemnify and hold harmless the Customer from all claims without limit.\n\n6. Term and Renewal This Agreement shall automatically renew for successive terms of twelve months.\n\n7. Restrictive Covenant The Employee shall not compete with the Employer for six months after termination"
+        },
+        {
+          "page_number": 3,
+          "source": "ocr",
+          "expected_source": "ocr",
+          "cer": 0.003448,
+          "wer": 0.020833,
+          "word_order_accuracy": 0.979167,
+          "confidence": 0.9223,
+          "expected_text": "8. Confidentiality\nThe Receiving Party shall keep the Confidential Information\nsecret and shall not disclose it to any third party.\n\n9. Governing Law\nThis Agreement is governed by the laws of England and Wales.\n\n10. Notices\nNotices must be in writing and delivered by hand or\nregistered post.",
+          "actual_text": "8. Confidentiality The Receiving Party shall keep the Confidential Information secret and shall not disclose it to any third party.\n\n9. Governing Law This Agreement is governed by the laws of England and Wales\n\n10. Notices Notices must be in writing and delivered by hand or registered post."
+        }
+      ],
+      "sources": {
+        "expected": [
+          "ocr",
+          "ocr",
+          "ocr"
+        ],
+        "actual": [
+          "ocr",
+          "ocr",
+          "ocr"
+        ],
+        "accuracy": 1.0,
+        "ocr_pages": [
+          1,
+          2,
+          3
+        ]
+      },
+      "segmentation": {
+        "segment_count": 13,
+        "expected_marker_count": 10,
+        "found_marker_count": 10,
+        "marker_recall": 1.0,
+        "marker_order_ok": true,
+        "missing_markers": [],
+        "exact_source_offsets": true,
+        "overlapping_segments": 0,
+        "marker_positions": [
+          26,
+          149,
+          318,
+          418,
+          525,
+          629,
+          729,
+          835,
+          967,
+          1044
+        ]
+      },
+      "page_offsets": {
+        "page_count": 3,
+        "ordered_page_numbers": true,
+        "contiguous_spans": true,
+        "marker_hits": [
+          {
+            "marker": "1. Definitions and Interpretation",
+            "expected_page": 1,
+            "offset": 27,
+            "actual_page": 1,
+            "ok": true
+          },
+          {
+            "marker": "4. Limitation of Liability",
+            "expected_page": 2,
+            "offset": 424,
+            "actual_page": 2,
+            "ok": true
+          },
+          {
+            "marker": "8. Confidentiality",
+            "expected_page": 3,
+            "offset": 845,
+            "actual_page": 3,
+            "ok": true
+          }
+        ],
+        "page_marker_accuracy": 1.0
+      },
+      "quality": {
+        "document_confidence": 0.9129,
+        "document_low_confidence_ratio": 0.0,
+        "warnings": [],
+        "mean_page_confidence": 0.913967,
+        "clauses_requiring_review": 0,
+        "clause_count": 13,
+        "review_findings": 0,
+        "review_clause_indexes": []
+      },
+      "risk": {
+        "expected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "detected_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "true_positive_codes": [
+          "AUTO_RENEWAL",
+          "BROAD_NON_COMPETE",
+          "EXTENDED_PAYMENT_TERMS",
+          "UNCAPPED_INDEMNITY",
+          "UNLIMITED_LIABILITY"
+        ],
+        "false_negative_codes": [],
+        "false_positive_codes": [],
+        "recall": 1.0
+      },
+      "clause_marker_order_ok": true,
+      "expected_pages": [
+        "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt.",
+        "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination.",
+        "8. Confidentiality\nThe Receiving Party shall keep the Confidential Information\nsecret and shall not disclose it to any third party.\n\n9. Governing Law\nThis Agreement is governed by the laws of England and Wales.\n\n10. Notices\nNotices must be in writing and delivered by hand or\nregistered post."
+      ]
+    }
+  ]
+}

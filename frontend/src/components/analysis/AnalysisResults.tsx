@@ -1,4 +1,4 @@
-import { Download, FileText, Loader2, SearchCheck } from "lucide-react"
+import { AlertTriangle, Download, FileText, Loader2, SearchCheck } from "lucide-react"
 import { useCallback, useMemo, useState } from "react"
 
 import { RiskScore } from "@/components/analysis/RiskScore"
@@ -136,6 +136,34 @@ export function AnalysisResults({
           </div>
         </CardHeader>
       </Card>
+
+      {doc.clauses_requiring_verification > 0 ||
+      doc.unverified_findings > 0 ||
+      (doc.quality_warnings?.length ?? 0) > 0 ? (
+        <Card className="border-amber-300 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/10">
+          <CardContent className="flex gap-3 pt-6">
+            <AlertTriangle
+              className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-300"
+              aria-hidden="true"
+            />
+            <div className="flex flex-col gap-2 text-sm text-amber-950 dark:text-amber-100">
+              <p className="font-medium">Some text needs manual verification</p>
+              <p>
+                {doc.clauses_requiring_verification} clause(s) and{" "}
+                {doc.unverified_findings} finding(s) come from OCR text with limited
+                confidence. Verify the quoted wording before relying on the analysis.
+              </p>
+              {doc.quality_warnings?.length ? (
+                <ul className="list-disc space-y-1 pl-4 text-xs">
+                  {doc.quality_warnings.map((warning, index) => (
+                    <li key={`${index}-${warning}`}>{warning}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

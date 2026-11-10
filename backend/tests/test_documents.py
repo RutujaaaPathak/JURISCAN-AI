@@ -1,3 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor
+
+from sqlalchemy import select
+
+from app.config import settings
+from app.core.database import SessionLocal
+from app.models import Document
+from app.services import ocr as ocr_module
 from tests.pdf_factory import image_only_pdf, multi_page_pdf
 
 SAMPLE_CONTRACT = """1. Indemnity
@@ -85,6 +93,32 @@ def test_upload_docx_is_extracted(client):
     assert body["analysis"]["findings"]
 
 
+def test_docx_zip_bomb_is_rejected(client, monkeypatch):
+    import io
+    import zipfile
+
+    from app.services import extraction
+
+    monkeypatch.setattr(extraction, "_MAX_DOCX_UNCOMPRESSED_BYTES", 1024)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", "A" * 2048)
+
+    resp = client.post(
+        "/api/documents",
+        files={
+            "file": (
+                "bomb.docx",
+                buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "invalid_document"
+
+
 def test_duplicate_upload_returns_conflict(client):
     assert _upload_txt(client).status_code == 201
     duplicate = _upload_txt(client)
@@ -92,6 +126,106 @@ def test_duplicate_upload_returns_conflict(client):
     body = duplicate.json()
     assert body["error"]["code"] == "duplicate_document"
     assert body["error"]["details"]["document_id"] == 1
+
+
+def test_upload_rejects_pdf_over_page_limit_and_marks_it_failed(client, monkeypatch):
+    monkeypatch.setattr(settings, "max_pdf_pages", 2)
+    data = multi_page_pdf(
+        [
+            ["1. Indemnity", "The Supplier shall indemnify the Customer."],
+            ["2. Payment", "Payment shall be due within thirty (30) days."],
+            ["3. Termination", "Either party may terminate this Agreement."],
+        ]
+    )
+
+    resp = client.post(
+        "/api/documents",
+        files={"file": ("large.pdf", data, "application/pdf")},
+    )
+
+    assert resp.status_code == 422, resp.text
+    error = resp.json()["error"]
+    assert error["code"] == "pdf_too_many_pages"
+    assert error["details"] == {"page_count": 3, "max_pdf_pages": 2}
+
+    with SessionLocal() as session:
+        document = session.scalar(
+            select(Document).where(Document.filename == "large.pdf")
+        )
+        assert document is not None
+        assert document.status == "FAILED"
+
+
+def test_upload_ocr_timeout_is_reported_and_marks_document_failed(client, monkeypatch):
+    monkeypatch.setattr(ocr_module, "ocr_available", lambda: True)
+
+    def timeout(*args, **kwargs):
+        raise ocr_module.OcrTimeout("timed out")
+
+    monkeypatch.setattr(ocr_module, "ocr_pdf_pages", timeout)
+    data = multi_page_pdf([[""]])
+
+    resp = client.post(
+        "/api/documents",
+        files={"file": ("scan.pdf", data, "application/pdf")},
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["error"]["code"] == "ocr_timeout"
+
+    with SessionLocal() as session:
+        document = session.scalar(
+            select(Document).where(Document.filename == "scan.pdf")
+        )
+        assert document is not None
+        assert document.status == "FAILED"
+
+
+def test_concurrent_distinct_uploads_both_complete(client):
+    # The dev fallback user is created lazily on the first authenticated
+    # request; warm it up so this test exercises upload concurrency only.
+    assert client.get("/api/documents").status_code == 200
+    first = SAMPLE_CONTRACT.replace("seven (7) days", "fourteen (14) days")
+    second = SAMPLE_CONTRACT.replace("one hundred and twenty", "ninety (90)")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                _upload_txt,
+                client,
+                content=first,
+                filename="first.txt",
+            ),
+            pool.submit(
+                _upload_txt,
+                client,
+                content=second,
+                filename="second.txt",
+            ),
+        ]
+        responses = [future.result(timeout=15) for future in futures]
+
+    assert sorted(response.status_code for response in responses) == [201, 201], [
+        response.text for response in responses
+    ]
+    assert all(response.json()["status"] == "PROCESSED" for response in responses)
+
+
+def test_concurrent_duplicate_uploads_produce_one_conflict(client):
+    assert client.get("/api/documents").status_code == 200
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(_upload_txt, client, filename=f"duplicate-{index}.txt")
+            for index in range(2)
+        ]
+        responses = [future.result(timeout=15) for future in futures]
+
+    statuses = sorted(response.status_code for response in responses)
+    assert statuses == [201, 409]
+    conflict = next(
+        response for response in responses if response.status_code == 409
+    )
+    assert conflict.json()["error"]["code"] == "duplicate_document"
 
 
 def test_unsupported_file_type_rejected(client):

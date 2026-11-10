@@ -12,13 +12,16 @@ from app.models import COMPANY_ROLES, USER_ROLES, User
 
 DbSession = Annotated[Session, Depends(get_db)]
 
-# Development/test fallback only. When no bearer token is supplied outside
-# production, requests resolve to this single default workspace user so the
-# app remains usable (and the existing test-suite keeps working) before every
-# client has signed in. Production requires a valid token instead.
+# Explicit development/test convenience identity. It is only used when
+# ALLOW_DEMO_USER is enabled and the environment is development or test; it is
+# never available in production or staging.
 DEFAULT_USER_EMAIL = "demo@juriscan.ai"
 DEFAULT_USER_USERNAME = "demo-reviewer"
 DEFAULT_USER_FULL_NAME = "Demo Reviewer"
+
+
+def _demo_fallback_allowed() -> bool:
+    return settings.allow_demo_user and settings.app_env in ("development", "test")
 
 
 def _parse_bearer_token(authorization: str | None) -> str | None:
@@ -63,27 +66,27 @@ def authenticate_token(db: Session, token: str | None) -> User | None:
     WebSockets cannot set an ``Authorization`` header from the browser, so the
     token is delivered in the first message and validated here with the exact
     same signing scheme the HTTP layer uses. A supplied token must be valid; the
-    development-only demo fallback is used solely when no token is presented
-    outside production (matching :func:`get_current_user`).
+    explicit demo fallback is used solely when no token is presented and
+    ALLOW_DEMO_USER is enabled outside production/staging.
     """
 
     if token:
         return _user_from_token(db, token)
-    if settings.app_env == "production":
-        return None
-    return _ensure_default_user(db)
+    if _demo_fallback_allowed():
+        return _ensure_default_user(db)
+    return None
 
 
 def _resolve_preview_role(requested: str | None) -> str | None:
     """Return the requested workspace role for a development preview request.
 
     This is intentionally NOT authentication: it performs no credential check
-    and only takes effect outside production. It exists so the single demo user
-    can exercise role-specific endpoints while an auth layer is still missing.
-    In production the requested role is always ignored.
+    and only takes effect when the explicit demo fallback is enabled outside
+    production/staging. It exists so the single demo user can exercise
+    role-specific endpoints in local development.
     """
 
-    if not requested or settings.app_env == "production":
+    if not requested or not _demo_fallback_allowed():
         return None
     if requested not in USER_ROLES:
         return None
@@ -98,13 +101,17 @@ def get_current_user(
     token = _parse_bearer_token(authorization)
     if token:
         user = _user_from_token(db, token)
-        if user is not None:
-            # A real session always wins over the development role preview, so an
-            # authenticated request can never spoof its role via the header.
-            return user
-        if settings.app_env == "production":
-            raise UnauthorizedError("Invalid or expired session.", code="invalid_token")
-    elif settings.app_env == "production":
+        if user is None:
+            # A supplied credential is never allowed to fall through to the demo
+            # user, regardless of environment.
+            raise UnauthorizedError(
+                "Invalid or expired session.", code="invalid_token"
+            )
+        # A real session always wins over the development role preview, so an
+        # authenticated request can never spoof its role via the header.
+        return user
+
+    if not _demo_fallback_allowed():
         raise UnauthorizedError("Authentication required.")
 
     user = _ensure_default_user(db)

@@ -1,4 +1,11 @@
-import { ChevronLeft, ChevronRight, FileText, Search, X } from "lucide-react"
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Search,
+  X,
+} from "lucide-react"
 import {
   type ReactNode,
   useCallback,
@@ -22,6 +29,7 @@ export interface ExtractedTextViewerProps {
   text: string | null
   pages: DocumentPage[]
   clauses: ClauseRead[]
+  qualityWarnings?: string[]
   focusClauseId?: number | null
   focusNonce?: number
 }
@@ -34,6 +42,7 @@ export function ExtractedTextViewer({
   text,
   pages,
   clauses,
+  qualityWarnings = [],
   focusClauseId = null,
   focusNonce = 0,
 }: ExtractedTextViewerProps) {
@@ -56,6 +65,10 @@ export function ExtractedTextViewer({
         .map((section) => section.pageNumber)
         .filter((value): value is number => value !== null),
     [sections],
+  )
+  const pageMeta = useMemo(
+    () => new Map(pages.map((page) => [page.page_number, page])),
+    [pages],
   )
 
   useEffect(() => {
@@ -144,6 +157,22 @@ export function ExtractedTextViewer({
 
   return (
     <div className="flex flex-col gap-3">
+      {qualityWarnings.length > 0 ? (
+        <div
+          role="status"
+          className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-medium">OCR quality notice</p>
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              {qualityWarnings.map((warning, index) => (
+                <li key={`${index}-${warning}`}>{warning}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
@@ -251,6 +280,15 @@ export function ExtractedTextViewer({
               <div className="sticky top-0 z-10 border-b border-border/60 bg-muted/80 px-4 py-1.5 backdrop-blur">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Page {section.pageNumber}
+                  {pageMeta.get(section.pageNumber)?.source === "ocr"
+                    ? ` · OCR${
+                        pageMeta.get(section.pageNumber)?.ocr_confidence != null
+                          ? ` ${Math.round(
+                              (pageMeta.get(section.pageNumber)?.ocr_confidence ?? 0) * 100,
+                            )}%`
+                          : ""
+                      }`
+                    : ""}
                 </span>
               </div>
             ) : null}

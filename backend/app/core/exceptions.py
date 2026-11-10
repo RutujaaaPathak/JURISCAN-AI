@@ -1,7 +1,6 @@
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -19,11 +18,14 @@ class AppError(Exception):
         code: str = "app_error",
         status_code: int = 400,
         details: Any = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message
         self.code = code
         self.status_code = status_code
         self.details = details
+        # Optional response headers (e.g. Retry-After for rate limiting).
+        self.headers = headers
         super().__init__(message)
 
 
@@ -52,11 +54,37 @@ class ValidationFailed(AppError):
         super().__init__(message, code=code, status_code=422, details=details)
 
 
+class TooManyRequestsError(AppError):
+    """The caller exceeded a rate limit (HTTP 429)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "rate_limited",
+        details: Any = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(
+            message, code=code, status_code=429, details=details, headers=headers
+        )
+
+
 def _error_body(code: str, message: str, details: Any = None) -> dict:
     body: dict = {"error": {"code": code, "message": message}}
     if details is not None:
         body["error"]["details"] = details
     return body
+
+
+def _safe_validation_details(errors: list[dict]) -> list[dict]:
+    """Keep field/type/message information without echoing submitted values."""
+
+    allowed = ("type", "loc", "msg")
+    return [
+        {key: error[key] for key in allowed if key in error}
+        for error in errors
+    ]
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -65,6 +93,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=_error_body(exc.code, exc.message, exc.details),
+            headers=exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)
@@ -76,7 +105,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=_error_body(
                 "validation_error",
                 "Request validation failed.",
-                details=jsonable_encoder(exc.errors()),
+                details=_safe_validation_details(exc.errors()),
             ),
         )
 
@@ -105,6 +134,7 @@ __all__ = [
     "ConflictError",
     "UnauthorizedError",
     "ForbiddenError",
+    "TooManyRequestsError",
     "ValidationFailed",
     "register_exception_handlers",
 ]

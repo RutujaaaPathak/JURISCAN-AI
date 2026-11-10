@@ -1,4 +1,4 @@
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -25,6 +25,11 @@ class RiskFinding(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
     citation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requires_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ocr_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     analysis: Mapped["Analysis"] = relationship(back_populates="risk_findings")
     clause: Mapped["Clause"] = relationship(back_populates="risk_findings")

@@ -30,6 +30,7 @@ FONT_BOLD = "hebo"
 DARK = (0.11, 0.12, 0.16)
 MUTED = (0.42, 0.45, 0.50)
 ACCENT = (0.18, 0.24, 0.62)
+REVIEW = (0.72, 0.42, 0.02)
 
 SEVERITY_COLOR = {
     "LOW": (0.06, 0.73, 0.51),
@@ -317,6 +318,10 @@ class _Writer:
             clause_ref_parts.append(f"Clause {clause.clause_number}")
         if clause is not None and clause.page_number is not None:
             clause_ref_parts.append(f"p.{clause.page_number}")
+        clause_quality = (clause.ocr_quality or {}) if clause is not None else {}
+        confidence = clause_quality.get("confidence")
+        if confidence is not None:
+            clause_ref_parts.append(f"OCR {confidence:.0%}")
         ref = " - ".join(clause_ref_parts)
         ref_width = (
             pymupdf.get_text_length(_printable(ref), fontname=FONT, fontsize=8)
@@ -353,6 +358,18 @@ class _Writer:
                 color=MUTED,
             )
         self.y += 16
+
+        if finding.requires_review:
+            reason = (
+                finding.review_reason
+                or "This finding comes from OCR text that needs manual verification."
+            )
+            self.para(
+                _printable(f"Manual verification required: {reason}"),
+                size=8.5,
+                color=REVIEW,
+                spacing_after=3,
+            )
 
         clause_text = clause.text if clause is not None else None
         if clause_text:
@@ -460,6 +477,59 @@ def build_report_pdf(
     completed = analysis.completed_at or analysis.created_at or datetime.now(timezone.utc)
     writer.kv("Analyzed", completed.strftime("%Y-%m-%d %H:%M UTC"))
     writer.kv("Engine", analysis.model_name or MODEL_NAME)
+    writer.rule()
+
+    writer.heading("Text quality and verification", size=11.5)
+    quality = document.ocr_quality or {}
+    verification_clauses = [
+        clause
+        for clause in clauses_by_id.values()
+        if (clause.ocr_quality or {}).get("requires_verification")
+    ]
+    review_findings = [finding for finding in findings if finding.requires_review]
+    ocr_clauses = [
+        clause
+        for clause in clauses_by_id.values()
+        if (clause.ocr_quality or {}).get("source") == "ocr"
+    ]
+    if quality:
+        confidence = quality.get("confidence")
+        low_ratio = quality.get("low_confidence_ratio")
+        quality_parts: list[str] = []
+        if confidence is not None:
+            quality_parts.append(f"Document OCR confidence {confidence:.0%}")
+        if low_ratio is not None:
+            quality_parts.append(f"{low_ratio:.0%} of OCR lines are low-confidence")
+        if quality_parts:
+            quality_text = (
+                "; ".join(quality_parts)
+                + ". OCR confidence indicates text-recognition reliability, not "
+                "legal correctness."
+            )
+        else:
+            quality_text = (
+                "OCR quality data is available, but no confidence score was recorded."
+            )
+        writer.para(quality_text)
+    elif ocr_clauses:
+        writer.para(
+            "This document includes OCR text, but no document-level confidence "
+            "score was recorded. Check the clause-level verification notices."
+        )
+    else:
+        writer.para(
+            "This document was read from its native text layer, so no OCR "
+            "confidence warning applies."
+        )
+    if verification_clauses or review_findings:
+        writer.para(
+            f"{len(verification_clauses)} clause(s) and {len(review_findings)} "
+            "finding(s) are marked for manual verification because their source "
+            "text may be unreliable.",
+            color=REVIEW,
+        )
+    for warning in document.quality_warnings or []:
+        writer.para(f"Quality notice: {warning}", color=REVIEW)
     writer.rule()
 
     writer.heading("Overall assessment", size=11.5)

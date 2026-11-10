@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -38,6 +38,9 @@ class Document(Base, TimestampMixin):
     word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     language: Mapped[str | None] = mapped_column(String(8), nullable=True)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    page_spans: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
+    ocr_quality: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    quality_warnings: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     extracted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

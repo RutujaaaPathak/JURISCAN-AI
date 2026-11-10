@@ -1,0 +1,376 @@
+{
+  "version": "1.0",
+  "disclaimer": "Synthetic legal text created solely for OCR regression testing. It is not legal advice, contains no client data, and must not be treated as a verified legal reference.",
+  "generation": {
+    "renderer": "PyMuPDF",
+    "dpi": 200,
+    "font_size": 13,
+    "leading": 20,
+    "transforms": [
+      "blur",
+      "noise",
+      "rotate90",
+      "skew",
+      "stamp"
+    ]
+  },
+  "cases": [
+    {
+      "id": "clean_contract",
+      "category": "clean_scanned_contract",
+      "description": "Two-page clean scan with numbered clauses and risk wording.",
+      "tags": [
+        "scan",
+        "multi-page",
+        "clauses"
+      ],
+      "page_count": 2,
+      "expected_sources": [
+        "ocr",
+        "ocr"
+      ],
+      "clause_markers": [
+        "1. Definitions and Interpretation",
+        "2. Services",
+        "3. Payment Terms",
+        "4. Limitation of Liability",
+        "5. Indemnity",
+        "6. Term and Renewal",
+        "7. Restrictive Covenant"
+      ],
+      "expected_risk_codes": [
+        "EXTENDED_PAYMENT_TERMS",
+        "UNLIMITED_LIABILITY",
+        "UNCAPPED_INDEMNITY",
+        "AUTO_RENEWAL",
+        "BROAD_NON_COMPETE"
+      ],
+      "pages": [
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [],
+          "page_marker": "1. Definitions and Interpretation",
+          "ground_truth": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt."
+        },
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [],
+          "page_marker": "4. Limitation of Liability",
+          "ground_truth": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+        }
+      ]
+    },
+    {
+      "id": "blurry_page",
+      "category": "blurry_scan",
+      "description": "Low-quality blurred scan with sensor noise.",
+      "tags": [
+        "scan",
+        "blur",
+        "noise",
+        "low-quality"
+      ],
+      "page_count": 1,
+      "expected_sources": [
+        "ocr"
+      ],
+      "clause_markers": [
+        "4. Limitation of Liability",
+        "5. Indemnity",
+        "6. Term and Renewal",
+        "7. Restrictive Covenant"
+      ],
+      "expected_risk_codes": [
+        "UNLIMITED_LIABILITY",
+        "UNCAPPED_INDEMNITY",
+        "AUTO_RENEWAL",
+        "BROAD_NON_COMPETE"
+      ],
+      "pages": [
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [
+            "blur",
+            "noise"
+          ],
+          "page_marker": "4. Limitation of Liability",
+          "ground_truth": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+        }
+      ]
+    },
+    {
+      "id": "rotated_page",
+      "category": "rotated_scan",
+      "description": "Sideways scan that must be rotated upright before OCR.",
+      "tags": [
+        "scan",
+        "rotation",
+        "orientation"
+      ],
+      "page_count": 1,
+      "expected_sources": [
+        "ocr"
+      ],
+      "clause_markers": [
+        "4. Limitation of Liability",
+        "5. Indemnity",
+        "6. Term and Renewal",
+        "7. Restrictive Covenant"
+      ],
+      "expected_risk_codes": [
+        "UNLIMITED_LIABILITY",
+        "UNCAPPED_INDEMNITY",
+        "AUTO_RENEWAL",
+        "BROAD_NON_COMPETE"
+      ],
+      "pages": [
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [
+            "rotate90"
+          ],
+          "page_marker": "4. Limitation of Liability",
+          "ground_truth": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+        }
+      ]
+    },
+    {
+      "id": "skewed_page",
+      "category": "skewed_scan",
+      "description": "Four-degree skewed scan that requires deskewing.",
+      "tags": [
+        "scan",
+        "skew",
+        "deskew"
+      ],
+      "page_count": 1,
+      "expected_sources": [
+        "ocr"
+      ],
+      "clause_markers": [
+        "4. Limitation of Liability",
+        "5. Indemnity",
+        "6. Term and Renewal",
+        "7. Restrictive Covenant"
+      ],
+      "expected_risk_codes": [
+        "UNLIMITED_LIABILITY",
+        "UNCAPPED_INDEMNITY",
+        "AUTO_RENEWAL",
+        "BROAD_NON_COMPETE"
+      ],
+      "pages": [
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [
+            "skew"
+          ],
+          "page_marker": "4. Limitation of Liability",
+          "ground_truth": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+        }
+      ]
+    },
+    {
+      "id": "two_column_page",
+      "category": "multi_column_layout",
+      "description": "Two-column clause layout with a vertical gutter.",
+      "tags": [
+        "scan",
+        "layout",
+        "columns",
+        "reading-order"
+      ],
+      "page_count": 1,
+      "expected_sources": [
+        "ocr"
+      ],
+      "clause_markers": [
+        "4. Limitation of Liability",
+        "5. Indemnity"
+      ],
+      "expected_risk_codes": [
+        "UNLIMITED_LIABILITY",
+        "UNCAPPED_INDEMNITY"
+      ],
+      "pages": [
+        {
+          "kind": "scan",
+          "layout": "columns",
+          "transforms": [],
+          "page_marker": "4. Limitation of Liability",
+          "ground_truth": "4. Limitation of Liability\nThe Supplier shall have\nunlimited liability for all\ndirect and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify\nand hold harmless the Customer\nfrom all claims without limit."
+        }
+      ]
+    },
+    {
+      "id": "table_page",
+      "category": "table_layout",
+      "description": "Schedule-style table whose rows must not be interleaved.",
+      "tags": [
+        "scan",
+        "layout",
+        "table"
+      ],
+      "page_count": 1,
+      "expected_sources": [
+        "ocr"
+      ],
+      "clause_markers": [],
+      "expected_risk_codes": [],
+      "pages": [
+        {
+          "kind": "scan",
+          "layout": "table",
+          "transforms": [],
+          "page_marker": null,
+          "ground_truth": "Party | Amount | Term\n\nAlice | 100 | 30 days\n\nBob | 250 | 60 days"
+        }
+      ]
+    },
+    {
+      "id": "stamped_page",
+      "category": "stamped_scan",
+      "description": "Clean page with a red approval stamp over the margin.",
+      "tags": [
+        "scan",
+        "stamp",
+        "overlay"
+      ],
+      "page_count": 1,
+      "expected_sources": [
+        "ocr"
+      ],
+      "clause_markers": [
+        "1. Definitions and Interpretation",
+        "2. Services",
+        "3. Payment Terms"
+      ],
+      "expected_risk_codes": [
+        "EXTENDED_PAYMENT_TERMS"
+      ],
+      "pages": [
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [
+            "stamp"
+          ],
+          "page_marker": "1. Definitions and Interpretation",
+          "ground_truth": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt."
+        }
+      ]
+    },
+    {
+      "id": "mixed_native_scan",
+      "category": "mixed_native_and_scanned",
+      "description": "Native-text page followed by an image-only scanned page.",
+      "tags": [
+        "mixed",
+        "native",
+        "scan",
+        "merge"
+      ],
+      "page_count": 2,
+      "expected_sources": [
+        "native",
+        "ocr"
+      ],
+      "clause_markers": [
+        "1. Definitions and Interpretation",
+        "2. Services",
+        "3. Payment Terms",
+        "4. Limitation of Liability",
+        "5. Indemnity",
+        "6. Term and Renewal",
+        "7. Restrictive Covenant"
+      ],
+      "expected_risk_codes": [
+        "EXTENDED_PAYMENT_TERMS",
+        "UNLIMITED_LIABILITY",
+        "UNCAPPED_INDEMNITY",
+        "AUTO_RENEWAL",
+        "BROAD_NON_COMPETE"
+      ],
+      "pages": [
+        {
+          "kind": "native",
+          "layout": "single",
+          "transforms": [],
+          "page_marker": "1. Definitions and Interpretation",
+          "ground_truth": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt."
+        },
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [],
+          "page_marker": "4. Limitation of Liability",
+          "ground_truth": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+        }
+      ]
+    },
+    {
+      "id": "long_contract",
+      "category": "long_document",
+      "description": "Three-page scan exercising repeated page assembly and offsets.",
+      "tags": [
+        "scan",
+        "long",
+        "multi-page",
+        "offsets"
+      ],
+      "page_count": 3,
+      "expected_sources": [
+        "ocr",
+        "ocr",
+        "ocr"
+      ],
+      "clause_markers": [
+        "1. Definitions and Interpretation",
+        "2. Services",
+        "3. Payment Terms",
+        "4. Limitation of Liability",
+        "5. Indemnity",
+        "6. Term and Renewal",
+        "7. Restrictive Covenant",
+        "8. Confidentiality",
+        "9. Governing Law",
+        "10. Notices"
+      ],
+      "expected_risk_codes": [
+        "EXTENDED_PAYMENT_TERMS",
+        "UNLIMITED_LIABILITY",
+        "UNCAPPED_INDEMNITY",
+        "AUTO_RENEWAL",
+        "BROAD_NON_COMPETE"
+      ],
+      "pages": [
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [],
+          "page_marker": "1. Definitions and Interpretation",
+          "ground_truth": "MASTER SERVICES AGREEMENT\n\n1. Definitions and Interpretation\nIn this Agreement the following definitions apply unless the\ncontext requires otherwise.\n\n2. Services\n2.1 The Supplier shall provide the Services described in each\nStatement of Work.\n2.2 The Supplier shall perform the Services with reasonable\nskill and care.\n\n3. Payment Terms\nThe Customer shall pay each undisputed invoice\nwithin ninety (90) days of receipt."
+        },
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [],
+          "page_marker": "4. Limitation of Liability",
+          "ground_truth": "4. Limitation of Liability\nThe Supplier shall have unlimited liability\nfor all direct and indirect losses.\n\n5. Indemnity\nThe Supplier shall indemnify and hold harmless the Customer\nfrom all claims without limit.\n\n6. Term and Renewal\nThis Agreement shall automatically renew for successive\nterms of twelve months.\n\n7. Restrictive Covenant\nThe Employee shall not compete with the Employer for six\nmonths after termination."
+        },
+        {
+          "kind": "scan",
+          "layout": "single",
+          "transforms": [],
+          "page_marker": "8. Confidentiality",
+          "ground_truth": "8. Confidentiality\nThe Receiving Party shall keep the Confidential Information\nsecret and shall not disclose it to any third party.\n\n9. Governing Law\nThis Agreement is governed by the laws of England and Wales.\n\n10. Notices\nNotices must be in writing and delivered by hand or\nregistered post."
+        }
+      ]
+    }
+  ]
+}

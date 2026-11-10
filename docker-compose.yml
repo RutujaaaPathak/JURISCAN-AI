@@ -1,0 +1,68 @@
+# JURISCAN-AI production stack: Postgres 16, FastAPI backend (single worker,
+# see docker/backend.Dockerfile), nginx-served SPA with an /api reverse proxy.
+#
+# Usage (from the repository root):
+#   1. Put production values in .env (at minimum SECRET_KEY and DB_PASSWORD;
+#      generate a key with: python -c "import secrets; print(secrets.token_urlsafe(48))")
+#   2. docker compose up -d --build
+#
+# Variable substitution reads .env in this directory (the repo root). Values in
+# the "environment:" blocks below are what the containers actually receive;
+# the backend never reads the dev .env inside the image.
+#
+# The :? guards fail fast on any compose command (down/ps/logs included) when
+# SECRET_KEY or DB_PASSWORD is missing — set them once in .env so every
+# compose command works. The backend additionally validates at startup that
+# a production SECRET_KEY is at least 32 characters and not a known default.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-juriscan}
+      POSTGRES_USER: ${DB_USER:-juriscan}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Not published to the host: the database is only reachable on the
+    # internal compose network. Expose it explicitly if remote access needed.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-juriscan} -d ${DB_NAME:-juriscan}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      ALLOW_DEMO_USER: "false"
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env (python -c "import secrets; print(secrets.token_urlsafe(48))")}
+      DATABASE_URL: postgresql+psycopg://${DB_USER:-juriscan}:${DB_PASSWORD}@db:5432/${DB_NAME:-juriscan}
+      FRONTEND_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+    volumes:
+      # Uploads and any local model artifacts survive container replacement.
+      - uploads:/data
+      - models:/models
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:
+  models:

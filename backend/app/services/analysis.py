@@ -370,6 +370,12 @@ class AnalysisResult:
     risk_level_by_index: dict[int, str] = field(default_factory=dict)
 
 
+def _detection_text(segment: Segment) -> str:
+    """Text used for matching only; stored clause text is never rewritten."""
+
+    return segment.normalized_text or segment.text
+
+
 def _infer_clause_type(text: str) -> str:
     lowered = text.lower()
     for clause_type, keywords in CLAUSE_TYPE_KEYWORDS:
@@ -417,17 +423,21 @@ def _data_protection_finding(
     mentions = [
         index
         for index, segment in enumerate(segments)
-        if _PERSONAL_DATA.search(segment.text)
+        if _PERSONAL_DATA.search(_detection_text(segment))
     ]
     if not mentions:
         return None
 
-    document_text = "\n".join(segment.text for segment in segments)
+    document_text = "\n".join(_detection_text(segment) for segment in segments)
     if _DATA_PROTECTION_SAFEGUARDS.search(document_text):
         return None
 
     anchor = next(
-        (index for index in mentions if not _is_heading_like(segments[index].text)),
+        (
+            index
+            for index in mentions
+            if not _is_heading_like(_detection_text(segments[index]))
+        ),
         mentions[0],
     )
     return FindingDraft(
@@ -489,12 +499,15 @@ def analyze_segments(segments: list[Segment]) -> AnalysisResult:
     per_segment_rules = tuple(rule for rule in RULES if not rule.document_level)
 
     for index, segment in enumerate(segments):
-        clause_type_by_index[index] = _infer_clause_type(segment.text)
-        if _is_heading_like(segment.text):
+        detection_text = _detection_text(segment)
+        clause_type_by_index[index] = _infer_clause_type(detection_text)
+        if _is_heading_like(detection_text):
             continue
         for rule in per_segment_rules:
-            if any(pattern.search(segment.text) for pattern in rule.patterns):
-                if rule.exclude and any(pattern.search(segment.text) for pattern in rule.exclude):
+            if any(pattern.search(detection_text) for pattern in rule.patterns):
+                if rule.exclude and any(
+                    pattern.search(detection_text) for pattern in rule.exclude
+                ):
                     continue
                 findings.append(
                     FindingDraft(

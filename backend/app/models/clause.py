@@ -1,4 +1,5 @@
 from sqlalchemy import (
+    JSON,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -27,6 +28,11 @@ class Clause(Base, TimestampMixin):
     clause_number: Mapped[int] = mapped_column(Integer, nullable=False)
     heading: Mapped[str | None] = mapped_column(String(255), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    normalization_changes: Mapped[list[dict] | None] = mapped_column(
+        JSON, nullable=True
+    )
+    ocr_quality: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     start_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
     end_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)

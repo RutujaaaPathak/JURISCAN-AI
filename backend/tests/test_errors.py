@@ -33,6 +33,8 @@ def test_request_validation_returns_422(client):
     body = resp.json()
     assert body["error"]["code"] == "validation_error"
     assert "details" in body["error"]
+    assert all("input" not in detail for detail in body["error"]["details"])
+    assert "not-an-int" not in resp.text
 
 
 def test_unhandled_exception_returns_json_500_when_debug_off():

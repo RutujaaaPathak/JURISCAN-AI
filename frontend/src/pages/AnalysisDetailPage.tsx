@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   ArrowLeft,
   Calendar,
   Download,
@@ -143,6 +144,23 @@ function DetailBody({ doc }: { doc: DocumentDetail }) {
         </div>
       ) : null}
 
+      {doc.clauses_requiring_verification > 0 || doc.unverified_findings > 0 ? (
+        <div
+          role="status"
+          className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-medium">Manual verification recommended</p>
+            <p className="mt-1 text-xs">
+              {doc.clauses_requiring_verification} clause(s) and{" "}
+              {doc.unverified_findings} finding(s) are based on OCR text with limited
+              confidence. Check the original wording before relying on them.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <div className="flex min-w-0 flex-col gap-6">
           <Card>
@@ -279,6 +297,7 @@ function DetailBody({ doc }: { doc: DocumentDetail }) {
                     text={doc.text_content}
                     pages={doc.pages}
                     clauses={doc.clauses}
+                    qualityWarnings={doc.quality_warnings}
                     focusClauseId={focusClause?.id ?? null}
                     focusNonce={focusClause?.nonce ?? 0}
                   />
@@ -324,6 +343,14 @@ function DetailBody({ doc }: { doc: DocumentDetail }) {
                         <span className="text-xs text-muted-foreground">Page {clause.page_number}</span>
                       ) : null}
                       {clause.clause_type ? <Badge variant="outline">{clause.clause_type}</Badge> : null}
+                      {clause.ocr_quality?.requires_verification ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-400 text-amber-800 dark:text-amber-200"
+                        >
+                          Verify OCR
+                        </Badge>
+                      ) : null}
                       <Button
                         variant="ghost"
                         size="xs"

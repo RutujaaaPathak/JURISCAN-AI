@@ -32,7 +32,7 @@ from app.services.company import (
 )
 from app.services.processing import delete_all_documents as delete_all_documents_service
 from app.services.processing import delete_document as delete_document_service
-from app.services.processing import process_upload
+from app.services.processing import process_upload_async
 from app.services.report import build_report_pdf
 
 router = APIRouter(tags=["documents"])
@@ -87,6 +87,11 @@ def _latest_analysis(document: Document) -> Analysis | None:
 def _summary_payload(document: Document) -> dict:
     analysis = _latest_analysis(document)
     findings = analysis.risk_findings if analysis else []
+    clauses_requiring_verification = sum(
+        1
+        for clause in document.clauses
+        if (clause.ocr_quality or {}).get("requires_verification")
+    )
     return {
         "id": document.id,
         "title": document.title,
@@ -110,6 +115,10 @@ def _summary_payload(document: Document) -> dict:
         "high_risk_count": sum(
             1 for finding in findings if finding.severity in ("HIGH", "CRITICAL")
         ),
+        "clauses_requiring_verification": clauses_requiring_verification,
+        "unverified_findings": sum(
+            1 for finding in findings if finding.requires_review
+        ),
     }
 
 
@@ -124,6 +133,9 @@ def _finding_payload(finding: RiskFinding, clause: Clause | None) -> dict:
         "description": finding.description,
         "recommendation": finding.recommendation,
         "citation": finding.citation,
+        "requires_review": finding.requires_review,
+        "review_reason": finding.review_reason,
+        "ocr_confidence": finding.ocr_confidence,
         "clause_number": clause.clause_number if clause else None,
         "clause_heading": clause.heading if clause else None,
         "clause_page": clause.page_number if clause else None,
@@ -155,17 +167,50 @@ def _analysis_payload(analysis: Analysis, clauses_by_id: dict[int, Clause]) -> d
 
 
 def _page_payloads(document: Document) -> list[dict]:
-    """Derive source-page character ranges from the persisted clause page numbers.
+    """Return persisted source-page ranges, falling back for legacy documents.
 
-    Only paginated formats produce page numbers on clauses, so DOCX/TXT yield an
-    empty list and the viewer falls back to a single unpaginated section. Page
-    ranges are made contiguous (the first starts at 0 and the last ends at the
-    length of the text) so the client can slice the text without gaps.
+    New documents persist every page span, including blank pages. Legacy rows
+    predate that column, so their spans are derived from clause page numbers as
+    before. The fallback keeps old documents readable without reprocessing.
     """
 
     text = document.text_content or ""
     if not text:
         return []
+
+    if document.page_spans:
+        pages: list[dict] = []
+        for span in document.page_spans:
+            if not isinstance(span, dict):
+                continue
+            try:
+                number = int(span["page_number"])
+                start = max(0, min(len(text), int(span["start_offset"])))
+                end = max(start, min(len(text), int(span["end_offset"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+            pages.append(
+                {
+                    "page_number": number,
+                    "start_offset": start,
+                    "end_offset": end,
+                    "source": span.get("source") or "native",
+                    "ocr_confidence": span.get("ocr_confidence"),
+                }
+            )
+        if pages:
+            pages.sort(key=lambda page: page["page_number"])
+            # The API has always exposed contiguous ranges so the client can
+            # slice text without gaps; the persisted spans remain exact.
+            for index in range(len(pages) - 1):
+                pages[index]["end_offset"] = pages[index + 1]["start_offset"]
+            return pages
+
+    return _legacy_page_payloads(document, text)
+
+
+def _legacy_page_payloads(document: Document, text: str) -> list[dict]:
+    """Derive page ranges from clause page numbers for pre-migration rows."""
 
     paginated = [clause for clause in document.clauses if clause.page_number is not None]
     paginated.sort(
@@ -200,6 +245,8 @@ def _detail_payload(document: Document) -> dict:
     payload = _summary_payload(document)
     payload["text_content"] = document.text_content
     payload["pages"] = _page_payloads(document)
+    payload["ocr_quality"] = document.ocr_quality
+    payload["quality_warnings"] = document.quality_warnings or []
     payload["clauses"] = [ClauseRead.model_validate(clause).model_dump() for clause in clauses]
     payload["analysis"] = (
         _analysis_payload(analysis, clauses_by_id) if analysis else None
@@ -281,8 +328,10 @@ def _ensure_can_delete(user, document: Document) -> None:
     ):
         return
     raise ForbiddenError(
-        "You do not have permission to delete this document.",
-        code="insufficient_company_role",
+        "Only the document owner or a company manager of its workspace "
+        "can delete it.",
+        code="document_delete_forbidden",
+        details={"document_id": document.id},
     )
 
 
@@ -346,9 +395,9 @@ async def upload_document(
     if not data:
         raise ValidationFailed("The uploaded file is empty.", code="empty_file")
 
-    document = process_upload(
-        db,
-        user=user,
+    user_id = user.id
+    document_id = await process_upload_async(
+        user_id=user_id,
         data=data,
         filename=filename,
         content_type=file.content_type,
@@ -358,7 +407,10 @@ async def upload_document(
         company_id=company_id,
     )
 
-    document = _get_document_or_404(db, document.id, user)
+    # The worker committed in its own session. End this request transaction so
+    # the re-query sees the committed document rather than a stale snapshot.
+    db.rollback()
+    document = _get_document_or_404(db, document_id, user)
     return _detail_payload(document)
 
 
@@ -429,6 +481,10 @@ def delete_document(
     document_id: int,
 ) -> Response:
     document = _get_document_or_404(db, document_id, user)
+    # Reading a document (owner, case-share or company scope) is not enough
+    # to delete it: only the owner or a company admin/manager of the
+    # document's company workspace may remove it.
+    _ensure_can_delete(user, document)
     delete_document_service(db, document)
     return Response(status_code=204)
 
