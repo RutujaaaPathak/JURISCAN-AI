@@ -116,4 +116,6 @@ def test_all_tables_registered():
         "case_appointments",
         "calls",
         "user_settings",
+        "companies",
+        "company_invitations",
     }

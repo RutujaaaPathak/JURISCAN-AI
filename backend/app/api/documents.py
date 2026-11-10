@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import CurrentUser, DbSession
 from app.config import settings
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationFailed
-from app.models import Analysis, Case, CaseDocument, Clause, Document, RiskFinding
+from app.models import Analysis, Case, CaseDocument, Clause, Company, Document, RiskFinding
 from app.schemas.documents import (
     AnalysisDetail,
     ClauseRead,
@@ -26,6 +26,10 @@ from app.schemas.documents import (
     RiskFindingRead,
 )
 from app.services.analysis import LEGACY_RULE_CATEGORIES, RULES
+from app.services.company import (
+    can_manage_company_documents,
+    can_upload_company_documents,
+)
 from app.services.processing import delete_all_documents as delete_all_documents_service
 from app.services.processing import delete_document as delete_document_service
 from app.services.processing import process_upload_async
@@ -268,14 +272,36 @@ def _shared_document_ids(user_id: int):
     )
 
 
-def _get_document_or_404(db: DbSession, document_id: int, user_id: int) -> Document:
+def _company_scope_id(user) -> int | None:
+    if user.role == "company" and user.company_id is not None:
+        return user.company_id
+    return None
+
+
+def _readable_document_conditions(user) -> list:
+    conditions = [
+        Document.user_id == user.id,
+        Document.id.in_(_shared_document_ids(user.id)),
+    ]
+    company_id = _company_scope_id(user)
+    if company_id is not None:
+        conditions.append(Document.company_id == company_id)
+    return conditions
+
+
+def _listed_document_conditions(user) -> list:
+    conditions = [Document.user_id == user.id]
+    company_id = _company_scope_id(user)
+    if company_id is not None:
+        conditions.append(Document.company_id == company_id)
+    return conditions
+
+
+def _get_document_or_404(db: DbSession, document_id: int, user) -> Document:
     document = db.scalar(
         _document_query().where(
             Document.id == document_id,
-            or_(
-                Document.user_id == user_id,
-                Document.id.in_(_shared_document_ids(user_id)),
-            ),
+            or_(*_readable_document_conditions(user)),
         )
     )
     if document is None:
@@ -285,6 +311,28 @@ def _get_document_or_404(db: DbSession, document_id: int, user_id: int) -> Docum
             details={"document_id": document_id},
         )
     return document
+
+
+def _ensure_can_delete(user, document: Document) -> None:
+    if user.role == "company" and user.company_role == "VIEWER":
+        raise ForbiddenError(
+            "Viewers cannot delete documents.",
+            code="insufficient_company_role",
+        )
+    if document.user_id == user.id:
+        return
+    if (
+        document.company_id is not None
+        and document.company_id == _company_scope_id(user)
+        and can_manage_company_documents(user)
+    ):
+        return
+    raise ForbiddenError(
+        "Only the document owner or a company manager of its workspace "
+        "can delete it.",
+        code="document_delete_forbidden",
+        details={"document_id": document.id},
+    )
 
 
 async def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
@@ -320,6 +368,29 @@ async def upload_document(
     filename = Path(file.filename or "document").name
     max_bytes = settings.max_upload_size_mb * 1024 * 1024
 
+    company_id = None
+    if user.role == "company":
+        if not can_upload_company_documents(user):
+            raise ForbiddenError(
+                "Your company role cannot upload documents.",
+                code="insufficient_company_role",
+                details={"actual": user.company_role},
+            )
+        if user.company_id is None:
+            comp_name = (user.organization_name or user.full_name or "").strip()
+            if comp_name:
+                company = db.scalar(
+                    select(Company).where(func.lower(Company.name) == comp_name.lower())
+                )
+                if company is None:
+                    company = Company(name=comp_name)
+                    db.add(company)
+                    db.flush()
+                user.company_id = company.id
+                user.company_role = user.company_role or "COMPANY_ADMIN"
+                db.commit()
+        company_id = user.company_id
+
     data = await _read_upload(file, max_bytes)
     if not data:
         raise ValidationFailed("The uploaded file is empty.", code="empty_file")
@@ -333,12 +404,13 @@ async def upload_document(
         title=title,
         max_size_bytes=max_bytes,
         force=force,
+        company_id=company_id,
     )
 
     # The worker committed in its own session. End this request transaction so
     # the re-query sees the committed document rather than a stale snapshot.
     db.rollback()
-    document = _get_document_or_404(db, document_id, user_id)
+    document = _get_document_or_404(db, document_id, user)
     return _detail_payload(document)
 
 
@@ -353,7 +425,7 @@ def list_documents(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
-    stmt = _document_query().where(Document.user_id == user.id)
+    stmt = _document_query().where(or_(*_listed_document_conditions(user)))
     if q and q.strip():
         pattern = f"%{q.strip().lower()}%"
         stmt = stmt.where(
@@ -382,13 +454,23 @@ def list_documents(
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)
 def get_document(db: DbSession, user: CurrentUser, document_id: int) -> dict:
-    document = _get_document_or_404(db, document_id, user.id)
+    document = _get_document_or_404(db, document_id, user)
     return _detail_payload(document)
 
 
 @router.delete("/documents", response_model=DeleteAllResult)
 def delete_all_documents(db: DbSession, user: CurrentUser) -> dict:
-    deleted = delete_all_documents_service(db, user.id)
+    if user.role == "company" and user.company_role == "VIEWER":
+        raise ForbiddenError(
+            "Viewers cannot delete documents.",
+            code="insufficient_company_role",
+        )
+    company_id = (
+        _company_scope_id(user)
+        if can_manage_company_documents(user)
+        else None
+    )
+    deleted = delete_all_documents_service(db, user.id, company_id=company_id)
     return {"deleted": deleted}
 
 
@@ -398,13 +480,11 @@ def delete_document(
     user: CurrentUser,
     document_id: int,
 ) -> Response:
-    document = _get_document_or_404(db, document_id, user.id)
-    if document.user_id != user.id:
-        raise ForbiddenError(
-            "Only the document owner can delete it.",
-            code="document_delete_forbidden",
-            details={"document_id": document_id},
-        )
+    document = _get_document_or_404(db, document_id, user)
+    # Reading a document (owner, case-share or company scope) is not enough
+    # to delete it: only the owner or a company admin/manager of the
+    # document's company workspace may remove it.
+    _ensure_can_delete(user, document)
     delete_document_service(db, document)
     return Response(status_code=204)
 
@@ -415,7 +495,7 @@ def get_analysis_report(
     user: CurrentUser,
     document_id: int,
 ) -> Response:
-    document = _get_document_or_404(db, document_id, user.id)
+    document = _get_document_or_404(db, document_id, user)
     if document.status != "PROCESSED":
         raise ValidationFailed(
             "The report is only available once the document has been analyzed.",

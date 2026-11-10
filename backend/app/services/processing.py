@@ -179,19 +179,27 @@ def delete_document(db: Session, document: Document) -> None:
     delete_upload(storage_path)
 
 
-def delete_all_documents(db: Session, user_id: int) -> int:
-    """Permanently remove every document owned by ``user_id``.
+def delete_all_documents(
+    db: Session, user_id: int, *, company_id: int | None = None
+) -> int:
+    """Permanently remove every document in the caller's deletion scope.
 
-    Deletion is scoped to the owning user so no other account's data is ever
-    touched. Findings, analyses and clauses are removed explicitly, all rows
-    are committed in a single transaction, and the documents' stored files are
-    removed afterwards (only those inside the managed upload directory). The
-    number of deleted documents is returned.
+    Without ``company_id`` deletion is scoped to the owning user so no other
+    account's data is ever touched. Company administrators/managers may pass
+    their company id to remove all company documents. Findings, analyses and
+    clauses are removed explicitly, all rows are committed in a single
+    transaction, and stored files are removed afterwards (only those inside the
+    managed upload directory). The number of deleted documents is returned.
     """
 
-    documents = list(
-        db.scalars(select(Document).where(Document.user_id == user_id)).all()
-    )
+    stmt = select(Document)
+    if company_id is not None:
+        stmt = stmt.where(
+            (Document.company_id == company_id) | (Document.user_id == user_id)
+        )
+    else:
+        stmt = stmt.where(Document.user_id == user_id)
+    documents = list(db.scalars(stmt).all())
     if not documents:
         return 0
 
@@ -219,8 +227,20 @@ def _latest_completed_analysis(document: Document) -> Analysis | None:
     return max(completed, key=lambda analysis: (analysis.created_at, analysis.id))
 
 
-def _duplicate_conflict(document: Document, user: User) -> ConflictError:
+def _duplicate_conflict(
+    document: Document, user: User, *, same_scope: bool | None = None
+) -> ConflictError:
+    """Build the duplicate-upload conflict for ``document``.
+
+    ``same_scope`` states whether the caller shares ownership of the document
+    or its company workspace; only then are any document details included, so
+    another account's identical upload is never exposed. When omitted, plain
+    ownership decides.
+    """
+
     same_owner = document.user_id == user.id
+    if same_scope is None:
+        same_scope = same_owner
     completed = _latest_completed_analysis(document)
     details = (
         {
@@ -230,12 +250,12 @@ def _duplicate_conflict(document: Document, user: User) -> ConflictError:
             "filename": document.filename,
             "status": document.status,
         }
-        if same_owner
+        if same_scope
         else None
     )
     if document.status == "PROCESSING":
         message = "This document is already being processed."
-    elif same_owner and completed is not None:
+    elif same_scope and completed is not None:
         message = "This document has already been analyzed."
     else:
         message = "This document has already been uploaded."
@@ -583,6 +603,7 @@ def process_upload(
     title: str | None,
     max_size_bytes: int,
     force: bool = False,
+    company_id: int | None = None,
 ) -> Document:
     """Entry point used by the upload endpoint.
 
@@ -607,10 +628,31 @@ def process_upload(
     )
     if existing is not None:
         same_owner = existing.user_id == user.id
+        same_company = (
+            company_id is not None and existing.company_id == company_id
+        )
+        if company_id is not None and existing.company_id is None:
+            # When a company user uploads a previously unassigned contract, attach it
+            # to their company workspace so it automatically appears in audit reports.
+            existing.company_id = company_id
+            db.commit()
+            db.refresh(existing)
+            same_company = True
+        elif company_id is not None and not same_company:
+            # If the document was uploaded by another member of this same company,
+            # unify its company scope.
+            prev_owner = db.get(User, existing.user_id)
+            if prev_owner and prev_owner.company_id == company_id:
+                existing.company_id = company_id
+                db.commit()
+                db.refresh(existing)
+                same_company = True
+
+        same_scope = same_owner or same_company
         completed = _latest_completed_analysis(existing)
         if existing.status == "PROCESSING":
-            raise _duplicate_conflict(existing, user)
-        if same_owner and (force or completed is None):
+            raise _duplicate_conflict(existing, user, same_scope=same_scope)
+        if same_scope and (force or completed is None):
             # Re-analyze in place when explicitly requested, after a previous
             # failure, or when the stored record never produced a completed
             # analysis. This is what lets a re-uploaded PDF be analyzed again.
@@ -624,11 +666,13 @@ def process_upload(
                 file_type=file_type,
             )
         else:
-            # Another user's identical document is never touched or exposed.
-            raise _duplicate_conflict(existing, user)
+            # Another user's (or company's) identical document is never touched
+            # or exposed.
+            raise _duplicate_conflict(existing, user, same_scope=same_scope)
     else:
         document = Document(
             user_id=user.id,
+            company_id=company_id,
             title=document_title,
             filename=filename,
             file_type=file_type,
@@ -649,7 +693,12 @@ def process_upload(
             select(Document).where(Document.content_hash == content_hash)
         )
         if existing is not None:
-            raise _duplicate_conflict(existing, user) from None
+            raced_same_scope = existing.user_id == user.id or (
+                company_id is not None and existing.company_id == company_id
+            )
+            raise _duplicate_conflict(
+                existing, user, same_scope=raced_same_scope
+            ) from None
         raise ValidationFailed(
             "The document could not be saved because of a concurrent upload.",
             code="processing_failed",
@@ -676,6 +725,7 @@ def _process_upload_worker(
     title: str | None,
     max_size_bytes: int,
     force: bool,
+    company_id: int | None = None,
 ) -> int:
     """Run one upload in a worker thread with a session it exclusively owns."""
 
@@ -696,6 +746,7 @@ def _process_upload_worker(
             title=title,
             max_size_bytes=max_size_bytes,
             force=force,
+            company_id=company_id,
         )
         return document.id
 
@@ -709,6 +760,7 @@ async def process_upload_async(
     title: str | None,
     max_size_bytes: int,
     force: bool = False,
+    company_id: int | None = None,
 ) -> int:
     """Run :func:`process_upload` off the event loop and return its document id."""
 
@@ -722,6 +774,7 @@ async def process_upload_async(
         title=title,
         max_size_bytes=max_size_bytes,
         force=force,
+        company_id=company_id,
     )
     return await loop.run_in_executor(_get_processing_executor(), worker)
 

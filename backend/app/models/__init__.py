@@ -24,6 +24,12 @@ from app.models.case import (
     CaseNote,
 )
 from app.models.clause import Clause
+from app.models.company import (
+    COMPANY_ROLES,
+    INVITATION_STATUSES,
+    Company,
+    CompanyInvitation,
+)
 from app.models.document import Document
 from app.models.lawyer import LAWYER_VERIFICATION_STATUSES, LawyerProfile
 from app.models.risk_finding import RiskFinding
@@ -51,8 +57,12 @@ __all__ = [
     "CaseMessage",
     "CaseNote",
     "Clause",
-    "FEE_PROPOSAL_STATUSES",
+    "Company",
+    "CompanyInvitation",
+    "COMPANY_ROLES",
     "Document",
+    "FEE_PROPOSAL_STATUSES",
+    "INVITATION_STATUSES",
     "LAWYER_VERIFICATION_STATUSES",
     "LawyerProfile",
     "RiskFinding",

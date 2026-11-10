@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     processing_stale_sweep_seconds: int = Field(default=300, ge=0)
     processing_max_concurrent_jobs: int = Field(default=2, ge=1, le=16)
 
+    # Company team invitations expire after this many hours. A fresh token is
+    # required after expiry; only its hash is stored.
+    company_invitation_ttl_hours: int = 24 * 7
+
     data_dir: Path = BASE_DIR.parent / "data"
     models_dir: Path = BASE_DIR.parent / "models"
 

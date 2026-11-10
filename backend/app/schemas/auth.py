@@ -67,6 +67,8 @@ class AuthUser(ORMModel, Timestamped):
     role: str
     organization_name: str | None
     is_active: bool
+    company_id: int | None = None
+    company_role: str | None = None
 
 
 class TokenResponse(ORMModel):
