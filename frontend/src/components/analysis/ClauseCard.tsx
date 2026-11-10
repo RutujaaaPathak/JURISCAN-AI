@@ -1,4 +1,4 @@
-import { BookOpen, Lightbulb, TextSearch, Wrench } from "lucide-react"
+import { AlertTriangle, BookOpen, Lightbulb, TextSearch, Wrench } from "lucide-react"
 
 import { SeverityBadge } from "@/components/analysis/RiskBadges"
 import { Button } from "@/components/ui/button"
@@ -40,6 +40,9 @@ export function ClauseCard({
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {clauseTitle ? <span>{clauseTitle}</span> : null}
+          {finding.ocr_confidence !== null && finding.ocr_confidence !== undefined ? (
+            <span>OCR {Math.round(finding.ocr_confidence * 100)}%</span>
+          ) : null}
           {finding.rule_code ? (
             <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px]">
               {finding.rule_code}
@@ -58,6 +61,22 @@ export function ClauseCard({
           ) : null}
         </div>
       </div>
+
+      {finding.requires_review ? (
+        <div
+          role="status"
+          className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+        >
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-medium">Manual verification required</p>
+            <p className="mt-1 text-xs">
+              {finding.review_reason ??
+                "This finding comes from OCR text that may be unreliable. Verify the quoted wording before relying on it."}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {clauseText ? (
         <blockquote

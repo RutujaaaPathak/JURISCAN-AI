@@ -123,6 +123,9 @@ class Segment:
     level: int = 1
     parent: int | None = None
     kind: str | None = None
+    # Detection-only normalisation. ``text`` remains the exact source slice.
+    normalized_text: str | None = None
+    normalization_changes: tuple[dict, ...] = ()
 
 
 @dataclass(slots=True)

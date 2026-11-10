@@ -225,6 +225,33 @@ def test_assigned_lawyer_can_open_attached_document(client, login):
     assert client.get(f"/api/documents/{document_id}").status_code == 404
 
 
+def test_assigned_lawyer_cannot_delete_client_document(client, login):
+    client_user = _make_user("individual", "client-delete-doc")
+    lawyer = _make_user("lawyer", "lawyer-delete-doc")
+
+    login(client_user)
+    upload = client.post(
+        "/api/documents",
+        files={"file": ("contract.txt", CONTRACT.encode("utf-8"), "text/plain")},
+    )
+    assert upload.status_code == 201, upload.text
+    document_id = upload.json()["id"]
+    case_id = _create_case(client, document_ids=[document_id]).json()["id"]
+
+    login(lawyer)
+    assert client.post(f"/api/cases/{case_id}/accept").status_code == 200
+    assert client.get(f"/api/documents/{document_id}").status_code == 200
+
+    denied = client.delete(f"/api/documents/{document_id}")
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "document_delete_forbidden"
+    assert client.get(f"/api/documents/{document_id}").status_code == 200
+
+    login(client_user)
+    assert client.delete(f"/api/documents/{document_id}").status_code == 204
+    assert client.get(f"/api/documents/{document_id}").status_code == 404
+
+
 def test_cannot_attach_documents_you_do_not_own(client, login):
     owner = _make_user("individual", "doc-owner")
     intruder = _make_user("individual", "doc-intruder")

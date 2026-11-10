@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from app.config import settings
 from app.core.exceptions import ValidationFailed
 from app.services import ocr
+from app.services.ocr_layout import OcrLineSpan, PageQuality
+from app.services.ocr_merge import DocumentQuality, aggregate_quality, select_page_text
 
 SUPPORTED_EXTENSIONS = ("pdf", "docx", "txt")
 
@@ -53,6 +55,13 @@ BINARY_MAGIC_PREFIXES = (b"MZ", b"\x7fELF", b"\xca\xfe\xba\xbe", b"\x00asm")
 
 DOCX_CONTENT_MARKER = "word/document.xml"
 
+# Defensive limits for DOCX archives. The upload size cap bounds the compressed
+# bytes, but a small ZIP can still expand to an enormous amount of data.
+_MAX_DOCX_ENTRIES = 10_000
+_MAX_DOCX_UNCOMPRESSED_BYTES = 250 * 1024 * 1024
+_MAX_DOCX_SINGLE_FILE_BYTES = 100 * 1024 * 1024
+_MAX_DOCX_COMPRESSION_RATIO = 200
+
 MIN_TEXT_CHARACTERS = 20
 
 
@@ -69,6 +78,8 @@ class PageSpan:
     start_offset: int
     end_offset: int
     char_count: int
+    source: str = "native"
+    ocr_confidence: float | None = None
 
 
 @dataclass(slots=True)
@@ -81,6 +92,59 @@ class ExtractedDocument:
     extracted_at: datetime
     pages: list[PageSpan] = field(default_factory=list)
     ocr_pages: list[int] = field(default_factory=list)
+    ocr_line_spans: list[OcrLineSpan] = field(default_factory=list)
+    ocr_quality: DocumentQuality | None = None
+    quality_warnings: list[str] = field(default_factory=list)
+
+
+def page_span_payloads(spans: list[PageSpan]) -> list[dict]:
+    """Serialise page spans for the document's JSON provenance column."""
+
+    return [
+        {
+            "page_number": span.page_number,
+            "start_offset": span.start_offset,
+            "end_offset": span.end_offset,
+            "char_count": span.char_count,
+            "source": span.source,
+            "ocr_confidence": span.ocr_confidence,
+        }
+        for span in spans
+    ]
+
+
+def quality_payload(quality: DocumentQuality | None) -> dict | None:
+    """Serialise OCR confidence metrics without leaking engine internals."""
+
+    if quality is None:
+        return None
+    return {
+        "confidence": quality.confidence,
+        "min_confidence": quality.min_confidence,
+        "low_confidence_ratio": quality.low_confidence_ratio,
+        "line_count": quality.line_count,
+        "word_count": quality.word_count,
+        "warnings": list(quality.warnings),
+        "low_confidence_lines": [
+            {
+                "text": line.text,
+                "confidence": line.confidence,
+                "bbox": list(line.bbox) if line.bbox else None,
+            }
+            for line in quality.low_confidence_lines
+        ],
+        "pages": {
+            str(number): {
+                "confidence": page.confidence,
+                "min_confidence": page.min_confidence,
+                "low_confidence_ratio": page.low_confidence_ratio,
+                "line_count": page.line_count,
+                "word_count": page.word_count,
+                "warnings": list(page.warnings),
+            }
+            for number, page in sorted(quality.pages.items())
+        },
+    }
 
 
 def _extension_of(filename: str) -> str:
@@ -109,7 +173,9 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
-def _extract_pdf(data: bytes) -> tuple[list[str], int]:
+def _extract_pdf(
+    data: bytes, *, max_pages: int | None = None
+) -> tuple[list[str], int]:
     """Return the raw text of each PDF page, in order, plus the page count."""
 
     from pypdf import PdfReader
@@ -128,8 +194,16 @@ def _extract_pdf(data: bytes) -> tuple[list[str], int]:
                     code="encrypted_document",
                 )
         pages = reader.pages
+        page_count = len(pages)
+        if max_pages is not None and page_count > max_pages:
+            raise ValidationFailed(
+                f"The PDF has {page_count} pages, which exceeds the limit of "
+                f"{max_pages}.",
+                code="pdf_too_many_pages",
+                details={"page_count": page_count, "max_pdf_pages": max_pages},
+            )
         chunks = [page.extract_text() or "" for page in pages]
-        return chunks, len(pages)
+        return chunks, page_count
     except ValidationFailed:
         raise
     except Exception as exc:
@@ -146,19 +220,34 @@ def _apply_ocr(
     allow_ocr: bool,
     min_page_chars: int,
     dpi: int,
-) -> tuple[list[str], list[int]]:
-    """OCR only the PDF pages that carry little or no native text.
+) -> tuple[
+    list[str],
+    list[int],
+    dict[int, PageQuality],
+    list[str],
+    list[str],
+    dict[int, tuple[OcrLineSpan, ...]],
+]:
+    """OCR pages with little native text and choose the better text per page.
 
-    Native text is preserved: an OCR result replaces a page only when it is
-    strictly longer than the native text found on that page. Returns the
-    (possibly) updated per-page chunks and the 1-based pages that gained text
-    thanks to OCR.
+    Native text is preserved when it is readable. OCR replaces it only when the
+    native text is clearly damaged and OCR confidence is materially better.
+    Returns updated chunks, OCR page numbers, page quality metrics, page sources,
+    preprocessing warnings and OCR line spans for pages that used OCR.
     """
 
     cleaned = [_clean_text(chunk) for chunk in chunks]
-    textless = [index + 1 for index, page in enumerate(cleaned) if len(page) < min_page_chars]
+    page_sources = [
+        "native" if page else "empty"
+        for page in cleaned
+    ]
+    textless = [
+        index + 1
+        for index, page in enumerate(cleaned)
+        if len(page) < min_page_chars
+    ]
     if not textless:
-        return chunks, []
+        return chunks, [], {}, page_sources, [], {}
 
     engine_ready = allow_ocr and ocr.ocr_available()
     if not engine_ready:
@@ -170,10 +259,16 @@ def _apply_ocr(
                 details={"pages": textless},
             )
         # Only some pages are image-only; keep the native text we do have.
-        return chunks, []
+        return chunks, [], {}, page_sources, [], {}
 
     try:
         readings = ocr.ocr_pdf_pages(data, textless, dpi=dpi)
+    except ocr.OcrTimeout as exc:
+        raise ValidationFailed(
+            "OCR timed out while reading the scanned pages of the PDF.",
+            code="ocr_timeout",
+            details={"pages": textless},
+        ) from exc
     except ocr.OcrUnavailable as exc:
         if len(textless) == len(chunks):
             raise ValidationFailed(
@@ -182,7 +277,7 @@ def _apply_ocr(
                 code="ocr_unavailable",
                 details={"pages": textless},
             ) from exc
-        return chunks, []
+        return chunks, [], {}, page_sources, [], {}
     except Exception as exc:
         raise ValidationFailed(
             "OCR failed while reading the scanned pages of the PDF.",
@@ -192,22 +287,66 @@ def _apply_ocr(
 
     updated = list(chunks)
     ocr_pages: list[int] = []
+    qualities: dict[int, PageQuality] = {}
+    line_spans_by_page: dict[int, tuple[OcrLineSpan, ...]] = {}
+    preprocess_warnings: list[str] = []
     for number, raw in readings.items():
+        if not 1 <= number <= len(cleaned):
+            continue
         ocr_text = _clean_text(raw)
-        if 1 <= number <= len(cleaned) and len(ocr_text) > len(cleaned[number - 1]):
-            updated[number - 1] = ocr_text
+        quality = getattr(raw, "quality", None)
+        confidence = quality.confidence if quality is not None else None
+        selection = select_page_text(
+            cleaned[number - 1],
+            ocr_text,
+            confidence,
+        )
+        if selection.source == "ocr" and selection.text:
+            updated[number - 1] = selection.text
+            page_sources[number - 1] = "ocr"
             ocr_pages.append(number)
-    return updated, sorted(ocr_pages)
+            if quality is not None:
+                qualities[number] = quality
+            spans = tuple(getattr(raw, "line_spans", ()) or ())
+            if spans:
+                line_spans_by_page[number] = spans
+        elif selection.source == "native":
+            page_sources[number - 1] = "native"
+        else:
+            page_sources[number - 1] = "empty"
+
+        for warning in getattr(raw, "preprocess_warnings", ()):
+            preprocess_warnings.append(
+                f"Page {number}: OCR preprocessing warning ({warning})."
+            )
+    return (
+        updated,
+        sorted(ocr_pages),
+        qualities,
+        page_sources,
+        preprocess_warnings,
+        line_spans_by_page,
+    )
 
 
-def _assemble_pages(pages: list[str]) -> tuple[str, list[PageSpan]]:
+def _assemble_pages(
+    pages: list[str],
+    *,
+    sources: list[str] | None = None,
+    qualities: dict[int, PageQuality] | None = None,
+    line_spans: dict[int, tuple[OcrLineSpan, ...]] | None = None,
+) -> tuple[str, list[PageSpan], list[OcrLineSpan]]:
     """Join per-page text into one document while recording page offsets.
 
     Each page is normalised independently and joined with a blank line so that
     page spans map cleanly back to character offsets in the extracted text.
+    Blank pages still receive a span, preserving source-page provenance. OCR
+    line spans are shifted into document offsets so clause quality can be
+    calculated without re-reading the source file.
     """
 
     spans: list[PageSpan] = []
+    document_line_spans: list[OcrLineSpan] = []
     text = ""
     for index, raw in enumerate(pages, start=1):
         page_text = _clean_text(raw)
@@ -215,15 +354,36 @@ def _assemble_pages(pages: list[str]) -> tuple[str, list[PageSpan]]:
             text += "\n\n"
         start = len(text)
         text += page_text
+        source = (
+            sources[index - 1]
+            if sources is not None and index - 1 < len(sources)
+            else ("native" if page_text else "empty")
+        )
+        quality = (qualities or {}).get(index)
         spans.append(
             PageSpan(
                 page_number=index,
                 start_offset=start,
                 end_offset=len(text),
                 char_count=len(page_text),
+                source=source,
+                ocr_confidence=quality.confidence if quality else None,
             )
         )
-    return text, spans
+        if source == "ocr" and raw == page_text:
+            for span in (line_spans or {}).get(index, ()):
+                if span.start_offset < 0 or span.end_offset > len(page_text):
+                    continue
+                document_line_spans.append(
+                    OcrLineSpan(
+                        text=span.text,
+                        confidence=span.confidence,
+                        start_offset=start + span.start_offset,
+                        end_offset=start + span.end_offset,
+                        bbox=span.bbox,
+                    )
+                )
+    return text, spans, document_line_spans
 
 
 def page_number_for_offset(spans: list[PageSpan], offset: int | None) -> int | None:
@@ -327,7 +487,8 @@ def _assert_docx_integrity(data: bytes) -> None:
 
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            names = set(archive.namelist())
+            entries = archive.infolist()
+            names = {entry.filename for entry in entries}
     except Exception as exc:
         raise ValidationFailed(
             "The DOCX file could not be opened. The archive may be corrupt.",
@@ -338,6 +499,32 @@ def _assert_docx_integrity(data: bytes) -> None:
             "The file is a ZIP archive but is not a valid Word document.",
             code="invalid_document",
         )
+    if len(entries) > _MAX_DOCX_ENTRIES:
+        raise ValidationFailed(
+            "The DOCX archive contains too many entries.",
+            code="invalid_document",
+        )
+
+    total_uncompressed = 0
+    for entry in entries:
+        if entry.file_size > _MAX_DOCX_SINGLE_FILE_BYTES:
+            raise ValidationFailed(
+                "The DOCX archive contains an oversized file.",
+                code="invalid_document",
+            )
+        total_uncompressed += entry.file_size
+        if total_uncompressed > _MAX_DOCX_UNCOMPRESSED_BYTES:
+            raise ValidationFailed(
+                "The DOCX archive expands beyond the allowed size.",
+                code="invalid_document",
+            )
+        if entry.file_size > 1024 * 1024:
+            compressed = max(entry.compress_size, 1)
+            if entry.file_size / compressed > _MAX_DOCX_COMPRESSION_RATIO:
+                raise ValidationFailed(
+                    "The DOCX archive has an unsafe compression ratio.",
+                    code="invalid_document",
+                )
 
 
 def resolve_file_type(
@@ -365,12 +552,14 @@ def validate_and_extract(
     allow_ocr: bool | None = None,
     ocr_min_page_chars: int | None = None,
     ocr_dpi: int | None = None,
+    max_pdf_pages: int | None = None,
 ) -> ExtractedDocument:
     """Validate an upload and extract its text.
 
     Raises ValidationFailed with a stable error code when the upload is not a
     supported or parseable document. ``allow_ocr``/``ocr_min_page_chars``/
-    ``ocr_dpi`` override the corresponding settings (used by tests).
+    ``ocr_dpi``/``max_pdf_pages`` override the corresponding settings (used by
+    tests).
     """
 
     if max_size_bytes is not None and len(data) > max_size_bytes:
@@ -383,9 +572,22 @@ def validate_and_extract(
     _assert_magic(data, file_type)
 
     ocr_pages: list[int] = []
+    ocr_line_spans: list[OcrLineSpan] = []
+    ocr_quality: DocumentQuality | None = None
+    quality_warnings: list[str] = []
     if file_type == "pdf":
-        chunks, page_count = _extract_pdf(data)
-        chunks, ocr_pages = _apply_ocr(
+        page_limit = (
+            settings.max_pdf_pages if max_pdf_pages is None else max_pdf_pages
+        )
+        chunks, page_count = _extract_pdf(data, max_pages=page_limit)
+        (
+            chunks,
+            ocr_pages,
+            qualities,
+            sources,
+            preprocess_warnings,
+            line_spans_by_page,
+        ) = _apply_ocr(
             data,
             chunks,
             allow_ocr=settings.ocr_enabled if allow_ocr is None else allow_ocr,
@@ -396,7 +598,16 @@ def validate_and_extract(
             ),
             dpi=settings.ocr_render_dpi if ocr_dpi is None else ocr_dpi,
         )
-        text, pages = _assemble_pages(chunks)
+        text, pages, ocr_line_spans = _assemble_pages(
+            chunks,
+            sources=sources,
+            qualities=qualities,
+            line_spans=line_spans_by_page,
+        )
+        ocr_quality = aggregate_quality(qualities)
+        if ocr_quality is not None:
+            quality_warnings.extend(ocr_quality.warnings)
+        quality_warnings.extend(preprocess_warnings)
     elif file_type == "docx":
         _assert_docx_integrity(data)
         raw, page_count = _extract_docx(data)
@@ -422,6 +633,9 @@ def validate_and_extract(
         extracted_at=datetime.now(timezone.utc),
         pages=pages,
         ocr_pages=ocr_pages,
+        ocr_line_spans=ocr_line_spans,
+        ocr_quality=ocr_quality,
+        quality_warnings=quality_warnings,
     )
 
 
@@ -432,6 +646,8 @@ __all__ = [
     "PageSpan",
     "SUPPORTED_EXTENSIONS",
     "page_number_for_offset",
+    "page_span_payloads",
+    "quality_payload",
     "resolve_file_type",
     "validate_and_extract",
 ]

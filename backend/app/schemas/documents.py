@@ -34,6 +34,9 @@ class ClauseRead(ORMModel, Timestamped):
     clause_number: int
     heading: str | None = None
     text: str
+    normalized_text: str | None = None
+    normalization_changes: list[dict] | None = None
+    ocr_quality: dict | None = None
     start_offset: int | None = None
     end_offset: int | None = None
     page_number: int | None = None
@@ -54,6 +57,9 @@ class RiskFindingRead(ORMModel, Timestamped):
     description: str
     recommendation: str | None = None
     citation: str | None = None
+    requires_review: bool = False
+    review_reason: str | None = None
+    ocr_confidence: float | None = None
     clause_number: int | None = None
     clause_heading: str | None = None
     clause_page: int | None = None
@@ -98,6 +104,8 @@ class DocumentSummary(ORMModel):
     safety_score: float | None = None
     finding_count: int = 0
     high_risk_count: int = 0
+    clauses_requiring_verification: int = 0
+    unverified_findings: int = 0
 
 
 class DocumentPage(ORMModel):
@@ -106,6 +114,8 @@ class DocumentPage(ORMModel):
     page_number: int
     start_offset: int
     end_offset: int
+    source: str = "native"
+    ocr_confidence: float | None = None
 
 
 class DocumentDetail(DocumentSummary):
@@ -114,6 +124,9 @@ class DocumentDetail(DocumentSummary):
     # Page boundaries within ``text_content``; empty for DOCX/TXT, which have no
     # reliable page information.
     pages: list[DocumentPage] = Field(default_factory=list)
+    # OCR confidence diagnostics and human-readable quality warnings.
+    ocr_quality: dict | None = None
+    quality_warnings: list[str] = Field(default_factory=list)
     clauses: list[ClauseRead] = Field(default_factory=list)
     analysis: AnalysisDetail | None = None
 

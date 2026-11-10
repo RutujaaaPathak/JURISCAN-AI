@@ -50,6 +50,8 @@ export interface DocumentSummary {
   safety_score: number | null
   finding_count: number
   high_risk_count: number
+  clauses_requiring_verification: number
+  unverified_findings: number
 }
 
 export interface ClauseRead {
@@ -66,6 +68,18 @@ export interface ClauseRead {
   label?: string | null
   level?: number
   parent_id?: number | null
+  normalized_text?: string | null
+  normalization_changes?: Record<string, unknown>[] | null
+  ocr_quality?: {
+    source?: string
+    page_number?: number | null
+    confidence?: number | null
+    min_confidence?: number | null
+    low_confidence_ratio?: number
+    low_confidence_lines?: Record<string, unknown>[]
+    warnings?: string[]
+    requires_verification?: boolean
+  } | null
   created_at: string
   updated_at: string
 }
@@ -85,6 +99,9 @@ export interface RiskFindingRead {
   clause_page: number | null
   clause_label?: string | null
   clause_level?: number | null
+  requires_review?: boolean
+  review_reason?: string | null
+  ocr_confidence?: number | null
   created_at: string
   updated_at: string
 }
@@ -108,11 +125,15 @@ export interface DocumentPage {
   page_number: number
   start_offset: number
   end_offset: number
+  source?: string
+  ocr_confidence?: number | null
 }
 
 export interface DocumentDetail extends DocumentSummary {
   text_content: string | null
   pages: DocumentPage[]
+  ocr_quality?: Record<string, unknown> | null
+  quality_warnings?: string[]
   clauses: ClauseRead[]
   analysis: AnalysisRead | null
 }

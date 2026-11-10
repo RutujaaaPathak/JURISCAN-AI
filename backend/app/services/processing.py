@@ -15,21 +15,37 @@ stuck in ``PROCESSING``: the surrounding ``try/except`` always finalises it.
 
 from __future__ import annotations
 
+import asyncio
+import functools
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core.exceptions import AppError, ConflictError, ValidationFailed
+from app.core.database import SessionLocal
+from app.core.exceptions import (
+    AppError,
+    ConflictError,
+    NotFoundError,
+    ValidationFailed,
+)
+from app.core.logging import logger
 from app.models import Analysis, Clause, Document, RiskFinding, User
 from app.services.analysis import MODEL_NAME, analyze_segments
+from app.services.clause_quality import assess_clause_quality
 from app.services.extraction import (
     page_number_for_offset,
+    page_span_payloads,
+    quality_payload,
     resolve_file_type,
     validate_and_extract,
 )
+from app.services.legal_normalization import normalize_segments
 from app.services.segmentation import segment_clauses
 from app.services.storage import (
     compute_content_hash,
@@ -38,39 +54,74 @@ from app.services.storage import (
 )
 
 _FAILED_MESSAGE = "An unexpected error occurred while processing the document."
+_STALE_MESSAGE = "Processing timed out before it completed. Please retry the upload."
+
+_processing_executor: ThreadPoolExecutor | None = None
+_processing_executor_lock = threading.Lock()
 
 
-def _as_utc(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+def _get_processing_executor() -> ThreadPoolExecutor:
+    global _processing_executor
+    if _processing_executor is None:
+        with _processing_executor_lock:
+            if _processing_executor is None:
+                _processing_executor = ThreadPoolExecutor(
+                    max_workers=max(1, settings.processing_max_concurrent_jobs),
+                    thread_name_prefix="juriscan-processing",
+                )
+    return _processing_executor
+
+
+def shutdown_processing_executor(*, wait: bool = False) -> None:
+    """Release the module-level processing executor (shutdown/tests)."""
+
+    global _processing_executor
+    with _processing_executor_lock:
+        executor = _processing_executor
+        _processing_executor = None
+    if executor is not None:
+        executor.shutdown(wait=wait, cancel_futures=True)
 
 
 def recover_stale_documents(db: Session, *, stale_seconds: int) -> int:
     """Mark documents stuck in ``PROCESSING`` for too long as ``FAILED``.
 
-    Returns the number of documents recovered. This is best-effort and never
-    raises, so a single bad row cannot block an upload.
+    The update is conditional on the row still being ``PROCESSING`` at write
+    time, so a worker that completes concurrently can never be overwritten by a
+    stale sweep. Returns the number of documents recovered. This is best-effort
+    and never raises, so a single bad row cannot block an upload.
     """
 
     threshold = datetime.now(timezone.utc) - timedelta(seconds=max(stale_seconds, 0))
-    stuck = db.scalars(
-        select(Document).where(Document.status == "PROCESSING")
-    ).all()
-    recovered = 0
-    for document in stuck:
-        updated = _as_utc(document.updated_at)
-        if updated is not None and updated < threshold:
-            document.status = "FAILED"
-            document.error_message = (
-                "Processing timed out before it completed. Please retry the upload."
+    try:
+        result = db.execute(
+            update(Document)
+            .where(
+                Document.status == "PROCESSING",
+                Document.updated_at < threshold,
             )
-            recovered += 1
-    if recovered:
+            .values(
+                status="FAILED",
+                error_message=_STALE_MESSAGE,
+                updated_at=datetime.now(timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
+        )
         db.commit()
-    return recovered
+        return max(int(result.rowcount or 0), 0)
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to recover stale documents")
+        return 0
+
+
+def recover_stale_documents_in_new_session() -> int:
+    """Run stale-document recovery with a session owned by the caller thread."""
+
+    with SessionLocal() as db:
+        return recover_stale_documents(
+            db, stale_seconds=settings.processing_stale_seconds
+        )
 
 
 def _clear_results(
@@ -168,6 +219,49 @@ def _latest_completed_analysis(document: Document) -> Analysis | None:
     return max(completed, key=lambda analysis: (analysis.created_at, analysis.id))
 
 
+def _duplicate_conflict(document: Document, user: User) -> ConflictError:
+    same_owner = document.user_id == user.id
+    completed = _latest_completed_analysis(document)
+    details = (
+        {
+            "document_id": document.id,
+            "analysis_id": completed.id if completed else None,
+            "title": document.title,
+            "filename": document.filename,
+            "status": document.status,
+        }
+        if same_owner
+        else None
+    )
+    if document.status == "PROCESSING":
+        message = "This document is already being processed."
+    elif same_owner and completed is not None:
+        message = "This document has already been analyzed."
+    else:
+        message = "This document has already been uploaded."
+    return ConflictError(
+        message,
+        code="duplicate_document",
+        details=details,
+    )
+
+
+def _ensure_processing_active(db: Session, document_id: int) -> None:
+    """Lock and verify that a worker still owns this document's processing run."""
+
+    status = db.scalar(
+        select(Document.status)
+        .where(Document.id == document_id)
+        .with_for_update()
+    )
+    if status != "PROCESSING":
+        raise ValidationFailed(
+            "Processing was interrupted before it completed. Please retry the upload.",
+            code="processing_interrupted",
+            details={"document_id": document_id, "status": status},
+        )
+
+
 def _finalize_failed(db: Session, document_id: int, message: str) -> None:
     db.rollback()
     document = db.get(Document, document_id)
@@ -185,6 +279,7 @@ def persist_clauses(
     segments: list,
     pages: list,
     result: Any,
+    clause_qualities: list[dict] | None = None,
 ) -> list[Clause]:
     """Persist segmented clauses for ``document``, updating existing rows by
     clause_number to reuse IDs, preserve risk-finding references, prevent duplicate
@@ -208,11 +303,24 @@ def persist_clauses(
             if hasattr(result, "risk_level_by_index") and result.risk_level_by_index
             else None
         )
+        normalized_text = getattr(segment, "normalized_text", None)
+        normalization_changes = list(
+            getattr(segment, "normalization_changes", ()) or ()
+        )
+        quality = (
+            clause_qualities[index]
+            if clause_qualities is not None and index < len(clause_qualities)
+            else None
+        )
 
         if segment.number in existing_by_number:
             clause = existing_by_number[segment.number]
             clause.heading = segment.heading
             clause.text = segment.text
+            clause.normalized_text = normalized_text
+            clause.normalization_changes = normalization_changes or None
+            if clause_qualities is not None:
+                clause.ocr_quality = quality
             clause.start_offset = segment.start_offset
             clause.end_offset = segment.end_offset
             clause.page_number = page_num
@@ -228,6 +336,9 @@ def persist_clauses(
                 clause_number=segment.number,
                 heading=segment.heading,
                 text=segment.text,
+                normalized_text=normalized_text,
+                normalization_changes=normalization_changes or None,
+                ocr_quality=quality,
                 start_offset=segment.start_offset,
                 end_offset=segment.end_offset,
                 page_number=page_num,
@@ -326,13 +437,37 @@ def run_processing(
         extracted = validate_and_extract(
             data, filename, content_type, max_size_bytes
         )
-        segments = segment_clauses(extracted.text)
+        if extracted.quality_warnings:
+            logger.warning(
+                "OCR quality warnings for document %s: %s",
+                document_id,
+                " ".join(extracted.quality_warnings),
+            )
+        segments = normalize_segments(segment_clauses(extracted.text))
         if not segments:
             raise ValidationFailed(
                 "No clauses could be identified in the document.",
                 code="no_clauses",
             )
+        clause_qualities = assess_clause_quality(
+            segments, extracted.pages, extracted.ocr_line_spans
+        )
+        review_clause_indexes = {
+            index
+            for index, quality in enumerate(clause_qualities)
+            if quality.get("requires_verification")
+        }
         result = analyze_segments(segments)
+        review_finding_count = sum(
+            1
+            for finding in result.findings
+            if finding.segment_index in review_clause_indexes
+        )
+
+        # Acquire a short-lived row lock before writing results. A stale sweep
+        # may have finalized this document while extraction/OCR was running; if
+        # so, abort rather than overwrite the terminal FAILED state.
+        _ensure_processing_active(db, document_id)
 
         stored_path = save_upload(data, filename)
         document.storage_path = stored_path
@@ -342,6 +477,9 @@ def run_processing(
         document.word_count = extracted.word_count
         document.language = extracted.language
         document.text_content = extracted.text
+        document.page_spans = page_span_payloads(extracted.pages)
+        document.ocr_quality = quality_payload(extracted.ocr_quality)
+        document.quality_warnings = extracted.quality_warnings or None
         document.extracted_at = extracted.extracted_at
         document.error_message = None
         db.flush()
@@ -352,15 +490,27 @@ def run_processing(
             segments,
             extracted.pages,
             result,
+            clause_qualities=clause_qualities,
         )
 
         now = extracted.extracted_at
+        summary = result.summary
+        if extracted.quality_warnings:
+            notice = " ".join(extracted.quality_warnings)
+            summary = f"{summary}\n\nOCR quality notice: {notice}"
+        if review_clause_indexes:
+            summary = (
+                f"{summary}\n\nOCR verification notice: "
+                f"{len(review_clause_indexes)} clause(s) came from low-confidence "
+                f"OCR; {review_finding_count} finding(s) are marked for manual "
+                "verification."
+            )
         analysis = Analysis(
             document_id=document.id,
             model_name=MODEL_NAME,
             status="COMPLETED",
             risk_score=result.risk_score,
-            summary=result.summary,
+            summary=summary,
             started_at=now,
             completed_at=now,
         )
@@ -369,6 +519,23 @@ def run_processing(
 
         for finding in result.findings:
             clause = clauses[finding.segment_index]
+            quality = clause_qualities[finding.segment_index]
+            requires_review = bool(quality.get("requires_verification"))
+            confidence = quality.get("confidence")
+            review_reason = None
+            if requires_review:
+                if confidence is None:
+                    review_reason = (
+                        f"Clause {clause.clause_number} was read from OCR but its "
+                        "confidence is unavailable. Verify the quoted wording before "
+                        "relying on this finding."
+                    )
+                else:
+                    review_reason = (
+                        f"Clause {clause.clause_number} was read from OCR with "
+                        f"{confidence:.0%} confidence. Verify the quoted wording "
+                        "before relying on this finding."
+                    )
             db.add(
                 RiskFinding(
                     analysis_id=analysis.id,
@@ -379,6 +546,9 @@ def run_processing(
                     description=finding.description,
                     recommendation=finding.recommendation,
                     citation=finding.citation,
+                    requires_review=requires_review,
+                    review_reason=review_reason,
+                    ocr_confidence=confidence,
                 )
             )
 
@@ -438,23 +608,8 @@ def process_upload(
     if existing is not None:
         same_owner = existing.user_id == user.id
         completed = _latest_completed_analysis(existing)
-        details = (
-            {
-                "document_id": existing.id,
-                "analysis_id": completed.id if completed else None,
-                "title": existing.title,
-                "filename": existing.filename,
-                "status": existing.status,
-            }
-            if same_owner
-            else None
-        )
         if existing.status == "PROCESSING":
-            raise ConflictError(
-                "This document is already being processed.",
-                code="duplicate_document",
-                details=details,
-            )
+            raise _duplicate_conflict(existing, user)
         if same_owner and (force or completed is None):
             # Re-analyze in place when explicitly requested, after a previous
             # failure, or when the stored record never produced a completed
@@ -468,19 +623,9 @@ def process_upload(
                 content_type=content_type,
                 file_type=file_type,
             )
-        elif same_owner:
-            raise ConflictError(
-                "This document has already been analyzed.",
-                code="duplicate_document",
-                details=details,
-            )
         else:
-            # Another user's identical document: never touch or expose it.
-            raise ConflictError(
-                "This document has already been uploaded.",
-                code="duplicate_document",
-                details=None,
-            )
+            # Another user's identical document is never touched or exposed.
+            raise _duplicate_conflict(existing, user)
     else:
         document = Document(
             user_id=user.id,
@@ -493,7 +638,23 @@ def process_upload(
         )
         db.add(document)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        # Two identical uploads can race between the SELECT above and INSERT.
+        # The unique content_hash constraint lets one win; report the other as
+        # the same duplicate conflict a sequential upload would receive.
+        db.rollback()
+        existing = db.scalar(
+            select(Document).where(Document.content_hash == content_hash)
+        )
+        if existing is not None:
+            raise _duplicate_conflict(existing, user) from None
+        raise ValidationFailed(
+            "The document could not be saved because of a concurrent upload.",
+            code="processing_failed",
+        ) from exc
+
     db.refresh(document)
     return run_processing(
         db,
@@ -506,12 +667,74 @@ def process_upload(
     )
 
 
+def _process_upload_worker(
+    *,
+    user_id: int,
+    data: bytes,
+    filename: str,
+    content_type: str | None,
+    title: str | None,
+    max_size_bytes: int,
+    force: bool,
+) -> int:
+    """Run one upload in a worker thread with a session it exclusively owns."""
+
+    with SessionLocal() as db:
+        user = db.get(User, user_id)
+        if user is None:
+            raise NotFoundError(
+                "The user account no longer exists.",
+                code="user_not_found",
+                details={"user_id": user_id},
+            )
+        document = process_upload(
+            db,
+            user=user,
+            data=data,
+            filename=filename,
+            content_type=content_type,
+            title=title,
+            max_size_bytes=max_size_bytes,
+            force=force,
+        )
+        return document.id
+
+
+async def process_upload_async(
+    *,
+    user_id: int,
+    data: bytes,
+    filename: str,
+    content_type: str | None,
+    title: str | None,
+    max_size_bytes: int,
+    force: bool = False,
+) -> int:
+    """Run :func:`process_upload` off the event loop and return its document id."""
+
+    loop = asyncio.get_running_loop()
+    worker = functools.partial(
+        _process_upload_worker,
+        user_id=user_id,
+        data=data,
+        filename=filename,
+        content_type=content_type,
+        title=title,
+        max_size_bytes=max_size_bytes,
+        force=force,
+    )
+    return await loop.run_in_executor(_get_processing_executor(), worker)
+
+
 __all__ = [
     "delete_all_documents",
     "delete_document",
     "persist_clauses",
     "process_upload",
+    "process_upload_async",
     "recover_stale_documents",
+    "recover_stale_documents_in_new_session",
     "run_processing",
+    "shutdown_processing_executor",
     "sync_legacy_clause_hierarchy",
 ]

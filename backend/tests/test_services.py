@@ -346,6 +346,41 @@ def _blank_pdf(page_count: int) -> bytes:
     return multi_page_pdf([[""] for _ in range(page_count)])
 
 
+def test_pdf_page_limit_rejects_before_ocr(monkeypatch):
+    calls: list[int] = []
+    monkeypatch.setattr(ocr_module, "ocr_available", lambda: True)
+    monkeypatch.setattr(
+        ocr_module, "ocr_pdf_pages", lambda *a, **k: calls.append(1) or {}
+    )
+
+    with pytest.raises(ValidationFailed) as exc:
+        validate_and_extract(
+            _blank_pdf(3),
+            "large.pdf",
+            "application/pdf",
+            max_pdf_pages=2,
+        )
+
+    assert exc.value.code == "pdf_too_many_pages"
+    assert exc.value.details == {"page_count": 3, "max_pdf_pages": 2}
+    assert calls == []
+
+
+def test_ocr_timeout_is_reported_for_scanned_pdf(monkeypatch):
+    monkeypatch.setattr(ocr_module, "ocr_available", lambda: True)
+
+    def timeout(*args, **kwargs):
+        raise ocr_module.OcrTimeout("timed out")
+
+    monkeypatch.setattr(ocr_module, "ocr_pdf_pages", timeout)
+
+    with pytest.raises(ValidationFailed) as exc:
+        validate_and_extract(_blank_pdf(1), "scan.pdf", "application/pdf")
+
+    assert exc.value.code == "ocr_timeout"
+    assert exc.value.details["pages"] == [1]
+
+
 def test_scanned_pdf_uses_ocr_and_records_ocr_pages(monkeypatch):
     monkeypatch.setattr(ocr_module, "ocr_available", lambda: True)
     monkeypatch.setattr(

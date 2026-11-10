@@ -1,0 +1,24 @@
+# Keep build contexts small and free of local state and secrets.
+
+# VCS and CI
+.git/
+.github/
+
+# Python: never ship virtualenvs, caches or test artifacts.
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.pyc
+backend/data/
+backend/tests/
+
+# Node: node_modules is installed inside the image from the lockfile.
+**/node_modules/
+frontend/dist/
+
+# Local state and secrets — never baked into an image.
+.env
+data/
+models/
+*.log
+*.db

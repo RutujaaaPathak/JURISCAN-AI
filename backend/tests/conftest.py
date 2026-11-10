@@ -6,6 +6,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TEST_DB_PATH = PROJECT_ROOT / "data" / "test_juriscan.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["APP_ENV"] = "test"
+os.environ["ALLOW_DEMO_USER"] = "true"
+os.environ["SECRET_KEY"] = "test-only-secret-key-that-is-long-enough-1234567890"
+# The whole suite shares one TestClient (one source IP). Disable the auth
+# rate limiter globally; tests/test_rate_limit.py re-enables it explicitly.
+os.environ["AUTH_RATE_LIMIT_MAX_REQUESTS"] = "0"
 
 import pytest
 from fastapi.testclient import TestClient

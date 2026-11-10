@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,11 +16,25 @@ from app.api.settings import router as settings_router
 from app.api.status import router as status_router
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
-from app.core.logging import RequestLoggingMiddleware, setup_logging
+from app.core.logging import RequestLoggingMiddleware, logger, setup_logging
 from app.services.call_signaling import call_signaling_manager
+from app.services.ocr import shutdown_ocr_executor
+from app.services.processing import (
+    recover_stale_documents_in_new_session,
+    shutdown_processing_executor,
+)
 from app.services.realtime import case_connections
 
 API_VERSION = "0.1.0"
+
+
+async def _stale_recovery_loop() -> None:
+    while True:
+        await asyncio.sleep(settings.processing_stale_sweep_seconds)
+        try:
+            await asyncio.to_thread(recover_stale_documents_in_new_session)
+        except Exception:
+            logger.exception("Periodic stale-document recovery failed")
 
 
 @asynccontextmanager
@@ -30,17 +44,42 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     loop = asyncio.get_running_loop()
     case_connections.bind_loop(loop)
     call_signaling_manager.bind_loop(loop)
-    yield
+
+    recovery_task: asyncio.Task | None = None
+    if settings.app_env != "test":
+        try:
+            await asyncio.to_thread(recover_stale_documents_in_new_session)
+        except Exception:
+            logger.warning("Startup stale-document recovery failed", exc_info=True)
+        if settings.processing_stale_sweep_seconds > 0:
+            recovery_task = asyncio.create_task(_stale_recovery_loop())
+
+    try:
+        yield
+    finally:
+        if recovery_task is not None:
+            recovery_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await recovery_task
+        await asyncio.to_thread(shutdown_processing_executor, wait=False)
+        await asyncio.to_thread(shutdown_ocr_executor, wait=False)
 
 
 def create_app() -> FastAPI:
     setup_logging(settings.log_level)
+
+    # Interactive API documentation and the OpenAPI schema are a development
+    # aid; production and staging must not publish the full route surface.
+    docs_enabled = settings.app_env not in ("production", "staging")
 
     app = FastAPI(
         title=settings.app_name,
         version=API_VERSION,
         debug=settings.app_debug,
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
 
     app.add_middleware(RequestLoggingMiddleware)

@@ -18,6 +18,9 @@ python-multipart==0.0.*
 # app/services/ocr.py, so the app still runs if they are absent.
 pymupdf==1.28.*
 rapidocr-onnxruntime==1.2.*
+# OpenCV prepares scanned pages before OCR (deskew, orientation, contrast).
+opencv-python==5.0.*
+numpy==2.5.*
 
 # AI/ML pipeline dependencies live in requirements-ml.txt and are NOT part of
 # the backend runtime. Enable the ML pipeline (scripts/, app/ml/) with:

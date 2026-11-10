@@ -125,3 +125,41 @@ def test_migration_preserves_existing_data(migration_db):
         assert row["parent_id"] is None
 
     engine.dispose()
+
+
+def test_quality_intelligence_migration_upgrade_and_downgrade(migration_db):
+    cfg, db_url = migration_db
+    engine = create_engine(db_url)
+
+    command.upgrade(cfg, "head")
+    inspector = inspect(engine)
+    clause_columns = {col["name"] for col in inspector.get_columns("clauses")}
+    finding_columns = {
+        col["name"] for col in inspector.get_columns("risk_findings")
+    }
+
+    assert {"normalized_text", "normalization_changes", "ocr_quality"} <= clause_columns
+    assert {"requires_review", "review_reason", "ocr_confidence"} <= finding_columns
+
+    engine.dispose()
+    engine = create_engine(db_url)
+    command.downgrade(cfg, "b7d9e1f3a5c6")
+    inspector = inspect(engine)
+    clause_columns = {col["name"] for col in inspector.get_columns("clauses")}
+    finding_columns = {
+        col["name"] for col in inspector.get_columns("risk_findings")
+    }
+
+    assert "normalized_text" not in clause_columns
+    assert "ocr_quality" not in clause_columns
+    assert "requires_review" not in finding_columns
+    assert "ocr_confidence" not in finding_columns
+
+    engine.dispose()
+    engine = create_engine(db_url)
+    command.upgrade(cfg, "head")
+    inspector = inspect(engine)
+    assert "requires_review" in {
+        col["name"] for col in inspector.get_columns("risk_findings")
+    }
+    engine.dispose()

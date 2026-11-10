@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.config import settings
+
 REGISTER = "/api/auth/register"
 LOGIN = "/api/auth/login"
 ME = "/api/auth/me"
@@ -132,3 +134,30 @@ def test_authenticated_role_is_authoritative_over_preview_header(client: TestCli
     forbidden = client.get("/api/lawyer/profile", headers=headers)
     assert forbidden.status_code == 403
     assert forbidden.json()["error"]["code"] == "insufficient_role"
+
+
+def test_missing_token_is_rejected_when_demo_fallback_is_disabled(
+    client: TestClient, monkeypatch
+):
+    monkeypatch.setattr(settings, "allow_demo_user", False)
+
+    response = client.get("/api/documents")
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+    preview = client.get(
+        "/api/cases/mine", headers={"X-Developer-Role": "lawyer"}
+    )
+    assert preview.status_code == 401
+
+
+def test_invalid_token_never_falls_back_to_demo_user(
+    client: TestClient, monkeypatch
+):
+    monkeypatch.setattr(settings, "allow_demo_user", True)
+
+    response = client.get(
+        "/api/documents", headers=_auth("not-a-real-token")
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_token"
