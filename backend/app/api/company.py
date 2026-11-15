@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
@@ -14,9 +14,11 @@ from app.core.exceptions import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
+    TooManyRequestsError,
     UnauthorizedError,
     ValidationFailed,
 )
+from app.core.ratelimit import SlidingWindowRateLimiter
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models import (
     COMPANY_ROLES,
@@ -47,6 +49,30 @@ from app.services.company import (
 from app.services.users import unique_username
 
 router = APIRouter(prefix="/company", tags=["company"])
+
+
+def _invitation_limits() -> tuple[int, float]:
+    return (
+        settings.company_invitation_rate_limit_max_requests,
+        settings.company_invitation_rate_limit_window_seconds,
+    )
+
+
+_invitation_accept_limiter = SlidingWindowRateLimiter(_invitation_limits)
+
+
+def invitation_accept_rate_limit(request: Request) -> None:
+    """Throttle unauthenticated invitation-token attempts by client IP."""
+
+    client = request.client
+    key = client.host if client else "unknown"
+    decision = _invitation_accept_limiter.check(key)
+    if not decision.allowed:
+        raise TooManyRequestsError(
+            "Too many invitation attempts. Please wait before trying again.",
+            code="rate_limited",
+            headers={"Retry-After": str(decision.retry_after_seconds)},
+        )
 
 
 def _company_or_404(db: DbSession, company_id: int) -> Company:
@@ -411,7 +437,11 @@ def preview_invitation(
     }
 
 
-@router.post("/invitations/accept", response_model=TokenResponse)
+@router.post(
+    "/invitations/accept",
+    response_model=TokenResponse,
+    dependencies=[Depends(invitation_accept_rate_limit)],
+)
 def accept_invitation(db: DbSession, payload: InvitationAcceptRequest) -> dict:
     invitation = _find_invitation(db, payload.token, for_update=True)
     if invitation.status == "ACCEPTED":
@@ -495,7 +525,10 @@ def accept_invitation(db: DbSession, payload: InvitationAcceptRequest) -> dict:
     ttl = settings.access_token_ttl_seconds
     return {
         "access_token": create_access_token(
-            user.id, secret=settings.secret_key, ttl_seconds=ttl
+            user.id,
+            secret=settings.secret_key,
+            ttl_seconds=ttl,
+            token_version=user.token_version,
         ),
         "token_type": "bearer",
         "expires_in": ttl,

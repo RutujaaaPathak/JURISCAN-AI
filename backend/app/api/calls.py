@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from starlette.concurrency import run_in_threadpool
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, ensure_verified_lawyer
 from app.core.database import SessionLocal
 from app.core.exceptions import (
     ConflictError,
@@ -37,6 +37,7 @@ from app.schemas.calls import (
     CallRead,
 )
 from app.services.call_signaling import (
+    CallConnection,
     calculate_duration,
     call_public_payload,
     call_signaling_manager,
@@ -49,11 +50,14 @@ router = APIRouter(tags=["calls"])
 
 AUTH_TIMEOUT_SECONDS = 10.0
 RINGING_STALE_TIMEOUT_SECONDS = 60
+SESSION_RECHECK_SECONDS = 15.0
 
 WS_BAD_REQUEST = 4400
 WS_UNAUTHORIZED = 4401
 WS_FORBIDDEN = 4403
 WS_AUTH_TIMEOUT = 4408
+
+_cleanup_tasks: set[asyncio.Task[None]] = set()
 
 
 def _cleanup_stale_calls(db: Session, case_id: int) -> None:
@@ -82,6 +86,8 @@ def _get_authorized_case(db: DbSession, case_id: int, user: User) -> Case:
         if case.assigned_lawyer_id is None:
             raise ConflictError("Cannot initiate or participate in calls: no lawyer is assigned to this case.")
         raise ForbiddenError("You are not authorized to participate in calls for this case.")
+    if user.role == "lawyer" and case.assigned_lawyer_id == user.id:
+        ensure_verified_lawyer(db, user)
     return case
 
 
@@ -333,6 +339,34 @@ def _authenticate_ws(token: str | None) -> User | None:
         db.close()
 
 
+def _validate_ws_session(token: str | None, user_id: int) -> bool:
+    from app.api.deps import authenticate_token, validate_session_token
+
+    db = SessionLocal()
+    try:
+        if token:
+            return validate_session_token(db, token, user_id)
+        user = authenticate_token(db, None)
+        return user is not None and user.id == user_id
+    finally:
+        db.close()
+
+
+async def _watch_ws_session(
+    websocket: WebSocket, token: str | None, user_id: int
+) -> None:
+    try:
+        while True:
+            await asyncio.sleep(SESSION_RECHECK_SECONDS)
+            if not await run_in_threadpool(_validate_ws_session, token, user_id):
+                await websocket.close(code=WS_UNAUTHORIZED)
+                return
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return
+
+
 def _extract_ws_token(raw: str) -> tuple[bool, str | None]:
     try:
         data = json.loads(raw)
@@ -383,30 +417,38 @@ def _safe_end_call(case_id: int, call_id: int, user_id: int) -> dict[str, Any] |
 
 
 async def _handle_signaling_event(
-    websocket: WebSocket, case_id: int, user_id: int, raw: str
-) -> bool:
-    """Handle one signaling frame. Returns False when socket must close."""
+    websocket: WebSocket,
+    case_id: int,
+    user_id: int,
+    token: str | None,
+    raw: str,
+) -> int | None:
+    """Handle one signaling frame. Returns a close code when the socket must close."""
+    if not await run_in_threadpool(_validate_ws_session, token, user_id):
+        await websocket.send_json({"type": "error", "code": "session_invalid"})
+        return WS_UNAUTHORIZED
+
     try:
         data = json.loads(raw)
     except (ValueError, TypeError):
         await websocket.send_json({"type": "error", "code": "invalid_payload"})
-        return True
+        return None
 
     if not isinstance(data, dict):
         await websocket.send_json({"type": "error", "code": "invalid_payload"})
-        return True
+        return None
 
     # Re-evaluate case authorization on every single inbound event
     authorized_case = await run_in_threadpool(load_call_authorized_case, case_id, user_id)
     if authorized_case is None:
         await websocket.send_json({"type": "error", "code": "not_authorized"})
-        return False
+        return WS_FORBIDDEN
 
     event_type = data.get("type")
 
     if event_type == "ping":
         await websocket.send_json({"type": "pong"})
-        return True
+        return None
 
     if event_type in ("offer", "answer", "ice_candidate"):
         call_id = data.get("call_id")
@@ -415,7 +457,7 @@ async def _handle_signaling_event(
         )
         if not is_participant:
             await websocket.send_json({"type": "error", "code": "forbidden_call"})
-            return True
+            return None
 
         # Forward signaling payload directly to the peer
         payload = {
@@ -429,7 +471,7 @@ async def _handle_signaling_event(
             payload["candidate"] = data.get("candidate")
 
         await call_signaling_manager.send_to_peer(case_id, user_id, payload)
-        return True
+        return None
 
     if event_type == "call_hangup":
         call_id = data.get("call_id")
@@ -439,10 +481,27 @@ async def _handle_signaling_event(
                 await call_signaling_manager.broadcast(
                     case_id, {"type": "call_ended", "call": ended_payload}
                 )
-        return True
+        return None
 
     await websocket.send_json({"type": "error", "code": "unknown_event"})
-    return True
+    return None
+
+
+def _schedule_call_cleanup(
+    conn: CallConnection, case_id: int, user_id: int
+) -> asyncio.Task[None]:
+    async def cleanup() -> None:
+        await call_signaling_manager.disconnect(conn)
+        await call_signaling_manager.send_to_peer(
+            case_id,
+            user_id,
+            {"type": "peer_disconnected", "user_id": user_id, "case_id": case_id},
+        )
+
+    task = asyncio.create_task(cleanup())
+    _cleanup_tasks.add(task)
+    task.add_done_callback(_cleanup_tasks.discard)
+    return task
 
 
 @router.websocket("/cases/{case_id}/calls/ws")
@@ -476,23 +535,27 @@ async def call_signaling_socket(websocket: WebSocket, case_id: int) -> None:
 
     conn = await call_signaling_manager.connect(websocket, case_id, user.id)
     await websocket.send_json({"type": "ready", "case_id": case_id, "user_id": user.id})
+    watcher = asyncio.create_task(_watch_ws_session(websocket, token, user.id))
 
     try:
         while True:
             raw = await websocket.receive_text()
-            keep_open = await _handle_signaling_event(websocket, case_id, user.id, raw)
-            if not keep_open:
-                await websocket.close(code=WS_FORBIDDEN)
+            close_code = await _handle_signaling_event(
+                websocket, case_id, user.id, token, raw
+            )
+            if close_code is not None:
+                await websocket.close(code=close_code)
                 break
     except WebSocketDisconnect:
         pass
     finally:
-        await call_signaling_manager.disconnect(conn)
-        await call_signaling_manager.send_to_peer(
-            case_id,
-            user.id,
-            {"type": "peer_disconnected", "user_id": user.id, "case_id": case_id},
-        )
+        watcher.cancel()
+        try:
+            await watcher
+        except asyncio.CancelledError:
+            pass
+        cleanup = _schedule_call_cleanup(conn, case_id, user.id)
+        await asyncio.shield(cleanup)
 
 
 __all__ = ["router"]

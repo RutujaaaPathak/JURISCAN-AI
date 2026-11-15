@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     # required after expiry; only its hash is stored.
     company_invitation_ttl_hours: int = 24 * 7
 
+    # Brute-force protection for the unauthenticated invitation-accept endpoint.
+    # Limits are per client IP, per process. Set to 0 to disable.
+    company_invitation_rate_limit_max_requests: int = Field(default=10, ge=0)
+    company_invitation_rate_limit_window_seconds: float = Field(default=60, ge=1)
+
     data_dir: Path = BASE_DIR.parent / "data"
     models_dir: Path = BASE_DIR.parent / "models"
 

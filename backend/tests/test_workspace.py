@@ -20,7 +20,9 @@ The Supplier shall indemnify the Customer against all losses without any cap.
 """
 
 
-def _make_user(role: str, name: str) -> User:
+def _make_user(
+    role: str, name: str, verification_status: str | None = "VERIFIED"
+) -> User:
     db = SessionLocal()
     try:
         user = User(
@@ -30,6 +32,13 @@ def _make_user(role: str, name: str) -> User:
             role=role,
         )
         db.add(user)
+        db.flush()
+        if role == "lawyer" and verification_status is not None:
+            db.add(
+                LawyerProfile(
+                    user_id=user.id, verification_status=verification_status
+                )
+            )
         db.commit()
         db.refresh(user)
         db.expunge(user)
@@ -60,7 +69,7 @@ def _create_case(client, **overrides):
 
 
 def _make_lawyer(client, login, name, **profile):
-    lawyer = _make_user("lawyer", name)
+    lawyer = _make_user("lawyer", name, verification_status=None)
     login(lawyer)
     data = {
         "bar_registration_number": f"BAR-{name}",

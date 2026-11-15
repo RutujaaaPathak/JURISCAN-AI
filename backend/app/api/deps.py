@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.database import get_db
 from app.core.exceptions import ForbiddenError, UnauthorizedError
-from app.core.security import decode_access_token
-from app.models import COMPANY_ROLES, USER_ROLES, User
+from app.core.security import decode_access_token_claims
+from app.models import COMPANY_ROLES, USER_ROLES, LawyerProfile, User
 
 DbSession = Annotated[Session, Depends(get_db)]
 
@@ -35,11 +35,13 @@ def _parse_bearer_token(authorization: str | None) -> str | None:
 
 
 def _user_from_token(db: Session, token: str) -> User | None:
-    user_id = decode_access_token(token, secret=settings.secret_key)
-    if user_id is None:
+    claims = decode_access_token_claims(token, secret=settings.secret_key)
+    if claims is None:
         return None
-    user = db.get(User, user_id)
+    user = db.get(User, claims.user_id)
     if user is None or not user.is_active:
+        return None
+    if user.token_version != claims.token_version:
         return None
     return user
 
@@ -126,6 +128,7 @@ def get_current_user(
             username=user.username,
             full_name=user.full_name,
             is_active=user.is_active,
+            token_version=user.token_version,
             role=preview,
         )
     return user
@@ -180,6 +183,56 @@ def require_role(*roles: str):
 LawyerUser = Annotated[User, Depends(require_role("lawyer"))]
 
 
+def lawyer_verification_status(db: Session, user_id: int) -> str | None:
+    """Return the lawyer's current verification status, or ``None``."""
+
+    return db.scalar(
+        select(LawyerProfile.verification_status).where(
+            LawyerProfile.user_id == user_id
+        )
+    )
+
+
+def ensure_verified_lawyer(db: Session, user: User) -> None:
+    """Reject lawyers that have not completed verification.
+
+    Callers use this for actions that expose confidential case resources. It is
+    intentionally separate from :data:`LawyerUser`: unverified lawyers must
+    still be able to manage their profile and submit verification documents.
+    """
+
+    if user.role != "lawyer":
+        raise ForbiddenError(
+            "You do not have permission to perform this action.",
+            code="insufficient_role",
+            details={"required": ["lawyer"], "actual": user.role},
+        )
+    status = lawyer_verification_status(db, user.id)
+    if status != "VERIFIED":
+        raise ForbiddenError(
+            "Your lawyer account must be verified before accessing this case resource.",
+            code="lawyer_verification_required",
+            details={"verification_status": status},
+        )
+
+
+def require_verified_lawyer(db: DbSession, user: CurrentUser) -> User:
+    ensure_verified_lawyer(db, user)
+    return user
+
+
+VerifiedLawyerUser = Annotated[User, Depends(require_verified_lawyer)]
+
+
+def validate_session_token(db: Session, token: str | None, user_id: int) -> bool:
+    """True when ``token`` is unexpired, active, and belongs to ``user_id``."""
+
+    if not token:
+        return False
+    user = _user_from_token(db, token)
+    return user is not None and user.id == user_id
+
+
 def require_company_member(user: CurrentUser) -> User:
     """Require an authenticated company account with an active membership.
 
@@ -223,10 +276,15 @@ __all__ = [
     "CurrentUser",
     "DbSession",
     "LawyerUser",
+    "VerifiedLawyerUser",
     "authenticate_token",
+    "ensure_verified_lawyer",
     "get_authenticated_user",
     "get_current_user",
+    "lawyer_verification_status",
     "require_company_admin",
     "require_company_member",
     "require_role",
+    "require_verified_lawyer",
+    "validate_session_token",
 ]

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -29,7 +29,7 @@ class Document(Base, TimestampMixin):
     mime_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     content_hash: Mapped[str | None] = mapped_column(
-        String(64), unique=True, index=True, nullable=True
+        String(64), index=True, nullable=True
     )
     status: Mapped[str] = mapped_column(
         String(16), default="PENDING", nullable=False
@@ -65,6 +65,22 @@ class Document(Base, TimestampMixin):
         CheckConstraint(
             "file_type IN ('pdf', 'docx', 'txt', 'other')",
             name="ck_documents_file_type",
+        ),
+        Index(
+            "ix_documents_company_content_hash",
+            "company_id",
+            "content_hash",
+            unique=True,
+            postgresql_where=text("company_id IS NOT NULL AND content_hash IS NOT NULL"),
+            sqlite_where=text("company_id IS NOT NULL AND content_hash IS NOT NULL"),
+        ),
+        Index(
+            "ix_documents_user_personal_content_hash",
+            "user_id",
+            "content_hash",
+            unique=True,
+            postgresql_where=text("company_id IS NULL AND content_hash IS NOT NULL"),
+            sqlite_where=text("company_id IS NULL AND content_hash IS NOT NULL"),
         ),
     )
 

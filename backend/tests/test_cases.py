@@ -8,7 +8,7 @@ import pytest
 
 from app.api.deps import get_current_user
 from app.core.database import SessionLocal
-from app.models import User
+from app.models import Case, LawyerProfile, User
 
 CONTRACT = """1. Indemnity
 The Supplier shall indemnify the Customer against all losses without any cap.
@@ -18,7 +18,9 @@ The Customer may terminate this Agreement for convenience at any time.
 """
 
 
-def _make_user(role: str, name: str) -> User:
+def _make_user(
+    role: str, name: str, verification_status: str | None = "VERIFIED"
+) -> User:
     db = SessionLocal()
     try:
         user = User(
@@ -28,6 +30,13 @@ def _make_user(role: str, name: str) -> User:
             role=role,
         )
         db.add(user)
+        db.flush()
+        if role == "lawyer" and verification_status is not None:
+            db.add(
+                LawyerProfile(
+                    user_id=user.id, verification_status=verification_status
+                )
+            )
         db.commit()
         db.refresh(user)
         db.expunge(user)
@@ -134,6 +143,82 @@ def test_accept_assigns_case_exclusively(client, login):
     # The first lawyer still owns it.
     login(lawyer_a)
     assert client.get("/api/cases/mine").json()["active"][0]["id"] == case_id
+
+
+@pytest.mark.parametrize(
+    "verification_status",
+    ["UNVERIFIED", "PENDING", "REJECTED", None],
+    ids=["unverified", "pending", "rejected", "missing-profile"],
+)
+def test_unverified_lawyers_cannot_take_confidential_case_actions(
+    client, login, verification_status
+):
+    client_user = _make_user("individual", "client-unverified")
+    lawyer = _make_user(
+        "lawyer",
+        f"lawyer-{verification_status or 'missing'}",
+        verification_status=verification_status,
+    )
+    login(client_user)
+    case_id = _create_case(client).json()["id"]
+
+    login(lawyer)
+    accepted = client.post(f"/api/cases/{case_id}/accept")
+    assert accepted.status_code == 403, accepted.text
+    assert accepted.json()["error"]["code"] == "lawyer_verification_required"
+
+    for path in (
+        f"/api/cases/{case_id}/request-info",
+        f"/api/cases/{case_id}/clarifications",
+    ):
+        response = client.post(path, json={"message": "Please share the deed."})
+        assert response.status_code == 403, response.text
+        assert response.json()["error"]["code"] == "lawyer_verification_required"
+
+
+@pytest.mark.parametrize(
+    "verification_status",
+    ["UNVERIFIED", "PENDING", None],
+    ids=["unverified", "pending", "missing-profile"],
+)
+def test_unverified_assigned_lawyer_cannot_read_confidential_case_resources(
+    client, login, verification_status
+):
+    suffix = verification_status or "missing"
+    client_user = _make_user("individual", f"client-assigned-{suffix}")
+    lawyer = _make_user(
+        "lawyer",
+        f"lawyer-assigned-{suffix}",
+        verification_status=verification_status,
+    )
+
+    login(client_user)
+    upload = client.post(
+        "/api/documents",
+        files={"file": ("contract.txt", CONTRACT.encode("utf-8"), "text/plain")},
+    )
+    assert upload.status_code == 201, upload.text
+    document_id = upload.json()["id"]
+    case_id = _create_case(client, document_ids=[document_id]).json()["id"]
+
+    # Simulate a legacy/admin assignment that bypassed the accept endpoint.
+    db = SessionLocal()
+    try:
+        case = db.get(Case, case_id)
+        case.status = "ASSIGNED"
+        case.assigned_lawyer_id = lawyer.id
+        db.commit()
+    finally:
+        db.close()
+
+    login(lawyer)
+    case_detail = client.get(f"/api/cases/{case_id}")
+    assert case_detail.status_code == 403
+    assert case_detail.json()["error"]["code"] == "lawyer_verification_required"
+
+    assert client.get(f"/api/documents/{document_id}").status_code == 404
+    assert client.get(f"/api/documents/{document_id}/report").status_code == 404
+    assert client.get(f"/api/cases/{case_id}/messages").status_code == 403
 
 
 def test_reject_requires_reason(client, login):
@@ -331,7 +416,9 @@ def test_lawyer_overview_reports_real_counts(client, login):
 
 
 def test_lawyer_profile_defaults_and_update(client, login):
-    lawyer = _make_user("lawyer", "lawyer-profile")
+    lawyer = _make_user(
+        "lawyer", "lawyer-profile", verification_status="UNVERIFIED"
+    )
     login(lawyer)
 
     profile = client.get("/api/lawyer/profile")

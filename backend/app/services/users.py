@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models import User
@@ -28,4 +28,23 @@ def unique_username(db: Session, email: str) -> str:
     return candidate
 
 
-__all__ = ["normalize_email", "unique_username"]
+def revoke_user_sessions(db: Session, user: User) -> int:
+    """Invalidate every token issued for ``user`` by advancing its generation.
+
+    Uses a single UPDATE expression so concurrent logout/password-change
+    requests cannot lose an increment. Commit is the caller-visible revocation
+    point; the refreshed ``user`` reflects the new generation for any token
+    issued immediately afterwards.
+    """
+
+    db.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(token_version=User.token_version + 1)
+    )
+    db.commit()
+    db.refresh(user)
+    return user.token_version
+
+
+__all__ = ["normalize_email", "revoke_user_sessions", "unique_username"]

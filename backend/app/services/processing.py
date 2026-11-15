@@ -194,11 +194,9 @@ def delete_all_documents(
 
     stmt = select(Document)
     if company_id is not None:
-        stmt = stmt.where(
-            (Document.company_id == company_id) | (Document.user_id == user_id)
-        )
+        stmt = stmt.where(Document.company_id == company_id)
     else:
-        stmt = stmt.where(Document.user_id == user_id)
+        stmt = stmt.where(Document.user_id == user_id, Document.company_id.is_(None))
     documents = list(db.scalars(stmt).all())
     if not documents:
         return 0
@@ -623,36 +621,27 @@ def process_upload(
     document_title = (title or "").strip() or Path(filename).stem or "Untitled document"
     content_hash = compute_content_hash(data)
 
-    existing = db.scalar(
-        select(Document).where(Document.content_hash == content_hash)
-    )
-    if existing is not None:
-        same_owner = existing.user_id == user.id
-        same_company = (
-            company_id is not None and existing.company_id == company_id
+    if company_id is not None:
+        existing = db.scalar(
+            select(Document).where(
+                Document.company_id == company_id,
+                Document.content_hash == content_hash,
+            )
         )
-        if company_id is not None and existing.company_id is None:
-            # When a company user uploads a previously unassigned contract, attach it
-            # to their company workspace so it automatically appears in audit reports.
-            existing.company_id = company_id
-            db.commit()
-            db.refresh(existing)
-            same_company = True
-        elif company_id is not None and not same_company:
-            # If the document was uploaded by another member of this same company,
-            # unify its company scope.
-            prev_owner = db.get(User, existing.user_id)
-            if prev_owner and prev_owner.company_id == company_id:
-                existing.company_id = company_id
-                db.commit()
-                db.refresh(existing)
-                same_company = True
+    else:
+        existing = db.scalar(
+            select(Document).where(
+                Document.user_id == user.id,
+                Document.company_id.is_(None),
+                Document.content_hash == content_hash,
+            )
+        )
 
-        same_scope = same_owner or same_company
+    if existing is not None:
         completed = _latest_completed_analysis(existing)
         if existing.status == "PROCESSING":
-            raise _duplicate_conflict(existing, user, same_scope=same_scope)
-        if same_scope and (force or completed is None):
+            raise _duplicate_conflict(existing, user, same_scope=True)
+        if force or completed is None:
             # Re-analyze in place when explicitly requested, after a previous
             # failure, or when the stored record never produced a completed
             # analysis. This is what lets a re-uploaded PDF be analyzed again.
@@ -666,9 +655,7 @@ def process_upload(
                 file_type=file_type,
             )
         else:
-            # Another user's (or company's) identical document is never touched
-            # or exposed.
-            raise _duplicate_conflict(existing, user, same_scope=same_scope)
+            raise _duplicate_conflict(existing, user, same_scope=True)
     else:
         document = Document(
             user_id=user.id,
@@ -685,19 +672,28 @@ def process_upload(
     try:
         db.commit()
     except IntegrityError as exc:
-        # Two identical uploads can race between the SELECT above and INSERT.
-        # The unique content_hash constraint lets one win; report the other as
-        # the same duplicate conflict a sequential upload would receive.
+        # Two identical uploads can race between the SELECT above and INSERT
+        # within the same tenant/user scope. The scoped partial unique index
+        # lets one win; report the duplicate conflict for the other.
         db.rollback()
-        existing = db.scalar(
-            select(Document).where(Document.content_hash == content_hash)
-        )
-        if existing is not None:
-            raced_same_scope = existing.user_id == user.id or (
-                company_id is not None and existing.company_id == company_id
+        if company_id is not None:
+            existing = db.scalar(
+                select(Document).where(
+                    Document.company_id == company_id,
+                    Document.content_hash == content_hash,
+                )
             )
+        else:
+            existing = db.scalar(
+                select(Document).where(
+                    Document.user_id == user.id,
+                    Document.company_id.is_(None),
+                    Document.content_hash == content_hash,
+                )
+            )
+        if existing is not None:
             raise _duplicate_conflict(
-                existing, user, same_scope=raced_same_scope
+                existing, user, same_scope=True
             ) from None
         raise ValidationFailed(
             "The document could not be saved because of a concurrent upload.",

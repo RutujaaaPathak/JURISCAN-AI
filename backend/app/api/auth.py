@@ -14,7 +14,7 @@ addresses.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -29,8 +29,14 @@ from app.core.exceptions import (
 from app.core.ratelimit import SlidingWindowRateLimiter
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models import Company, LawyerProfile, User
-from app.schemas.auth import AuthUser, LoginRequest, RegisterRequest, TokenResponse
-from app.services.users import normalize_email, unique_username
+from app.schemas.auth import (
+    AuthUser,
+    LoginRequest,
+    PasswordChangeRequest,
+    RegisterRequest,
+    TokenResponse,
+)
+from app.services.users import normalize_email, revoke_user_sessions, unique_username
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -75,7 +81,12 @@ def auth_rate_limit(request: Request) -> None:
 
 def _token_response(user: User) -> dict:
     ttl = settings.access_token_ttl_seconds
-    token = create_access_token(user.id, secret=settings.secret_key, ttl_seconds=ttl)
+    token = create_access_token(
+        user.id,
+        secret=settings.secret_key,
+        ttl_seconds=ttl,
+        token_version=user.token_version,
+    )
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -175,6 +186,39 @@ def login(db: DbSession, payload: LoginRequest) -> dict:
     if not user.is_active:
         raise ForbiddenError("This account is disabled.", code="account_disabled")
     return _token_response(user)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(db: DbSession, user: AuthenticatedUser) -> Response:
+    """Revoke every session for the authenticated account server-side.
+
+    Incrementing ``token_version`` invalidates the token used for this request
+    and all other sessions (including other browsers/tabs) immediately. A
+    client-side localStorage clear is never treated as logout by itself.
+    """
+
+    revoke_user_sessions(db, user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(auth_rate_limit)],
+)
+def change_password(
+    db: DbSession, user: AuthenticatedUser, payload: PasswordChangeRequest
+) -> Response:
+    """Change the account password and revoke all previously issued sessions."""
+
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise UnauthorizedError(
+            "Current password is incorrect.", code="invalid_current_password"
+        )
+    user.hashed_password = hash_password(payload.new_password)
+    # Revoking after the password update commits both changes atomically.
+    revoke_user_sessions(db, user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/me", response_model=AuthUser)

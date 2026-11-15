@@ -17,7 +17,13 @@ from fastapi import APIRouter, Query
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentUser, DbSession, LawyerUser
+from app.api.deps import (
+    CurrentUser,
+    DbSession,
+    LawyerUser,
+    VerifiedLawyerUser,
+    ensure_verified_lawyer,
+)
 from app.core.exceptions import (
     ConflictError,
     ForbiddenError,
@@ -255,14 +261,19 @@ def _case_detail(case: Case, user: User) -> dict:
     return payload
 
 
-def _ensure_viewable(case: Case, user: User) -> None:
-    """Raise 404 unless the user may see the case.
+def _ensure_viewable(db: DbSession, case: Case, user: User) -> None:
+    """Raise unless the user may see the case.
 
     Allowed: the client who posted it, the assigned lawyer, or any lawyer while
-    the case is still OPEN (the available-cases marketplace).
+    the case is still OPEN (the available-cases marketplace). An assigned lawyer
+    must still be verified, so revoking verification immediately removes access
+    to the client's confidential case detail.
     """
 
-    if user.id in (case.posted_by_user_id, case.assigned_lawyer_id):
+    if user.id == case.posted_by_user_id:
+        return
+    if user.id == case.assigned_lawyer_id:
+        ensure_verified_lawyer(db, user)
         return
     if user.role == "lawyer" and case.status == "OPEN":
         return
@@ -656,7 +667,7 @@ def get_case(db: DbSession, user: CurrentUser, case_id: int) -> dict:
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_viewable(case, user)
+    _ensure_viewable(db, case, user)
     return _case_detail(case, user)
 
 
@@ -669,7 +680,7 @@ def _record(db: DbSession, *, case_id: int, user: User, action: str, detail: str
 
 
 @router.post("/cases/{case_id}/accept", response_model=CaseDetail)
-def accept_case(db: DbSession, user: LawyerUser, case_id: int) -> dict:
+def accept_case(db: DbSession, user: VerifiedLawyerUser, case_id: int) -> dict:
     case = _load_case(db, case_id)
     if case is None:
         raise NotFoundError(
@@ -783,7 +794,7 @@ def reject_case(
 
 @router.post("/cases/{case_id}/request-info", response_model=CaseDetail)
 def request_case_info(
-    db: DbSession, user: LawyerUser, case_id: int, payload: CaseDecisionCreate
+    db: DbSession, user: VerifiedLawyerUser, case_id: int, payload: CaseDecisionCreate
 ) -> dict:
     case = _load_case(db, case_id)
     if case is None:
@@ -914,7 +925,7 @@ def add_case_note(
 # ---------------------------------------------------------------------------
 
 
-def _ensure_case_party(case: Case, user: User) -> None:
+def _ensure_case_party(db: DbSession, case: Case, user: User) -> None:
     if user.id not in (case.posted_by_user_id, case.assigned_lawyer_id):
         raise NotFoundError(
             f"Case {case.id} was not found.",
@@ -926,6 +937,13 @@ def _ensure_case_party(case: Case, user: User) -> None:
             "This case has no assigned lawyer yet.",
             code="case_not_assigned",
         )
+    # The client always keeps access. A lawyer whose verification was revoked
+    # loses access to party-only resources even while still assigned.
+    if (
+        user.id == case.assigned_lawyer_id
+        and user.id != case.posted_by_user_id
+    ):
+        ensure_verified_lawyer(db, user)
 
 
 def _unread_messages(db: DbSession, case_id: int, user_id: int) -> int:
@@ -1079,7 +1097,7 @@ def list_case_messages(db: DbSession, user: CurrentUser, case_id: int) -> dict:
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
     return _messages_payload(db, case, user)
 
 
@@ -1098,7 +1116,7 @@ def send_case_message(
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
 
     message = CaseMessage(
         case_id=case.id, sender_user_id=user.id, body=payload.body.strip()
@@ -1123,7 +1141,7 @@ def mark_case_messages_read(db: DbSession, user: CurrentUser, case_id: int) -> d
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
 
     db.execute(
         update(CaseMessage)
@@ -1251,7 +1269,7 @@ def list_case_clarifications(db: DbSession, user: CurrentUser, case_id: int) -> 
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_viewable(case, user)
+    _ensure_viewable(db, case, user)
     return _clarifications_payload(db, case, user)
 
 
@@ -1270,7 +1288,7 @@ def create_case_clarification(
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_viewable(case, user)
+    _ensure_viewable(db, case, user)
     if case.status in COMPLETED_STATUSES:
         raise ConflictError("This case is closed.", code="case_closed")
 
@@ -1318,6 +1336,7 @@ def create_case_clarification(
 
     # An interested lawyer asks or follows up on their own thread only.
     if user.role == "lawyer":
+        ensure_verified_lawyer(db, user)
         if case.assigned_lawyer_id is not None:
             raise ConflictError(
                 "This case is already assigned; continue in the case workspace.",
@@ -1379,7 +1398,7 @@ def mark_case_clarifications_read(
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_viewable(case, user)
+    _ensure_viewable(db, case, user)
 
     stmt = update(CaseClarificationMessage).where(
         CaseClarificationMessage.case_id == case.id,
@@ -1410,7 +1429,7 @@ def list_case_fees(db: DbSession, user: CurrentUser, case_id: int) -> list[dict]
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
     return _fees_payload(db, case)
 
 
@@ -1429,7 +1448,7 @@ def propose_case_fee(
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
 
     # A new proposal supersedes any still-open one.
     db.execute(
@@ -1490,7 +1509,7 @@ def accept_case_fee(
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
     proposal = _get_fee_or_404(db, case.id, proposal_id)
     if proposal.status != "PROPOSED":
         raise ConflictError(
@@ -1538,7 +1557,7 @@ def decline_case_fee(
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
     proposal = _get_fee_or_404(db, case.id, proposal_id)
     if proposal.status != "PROPOSED":
         raise ConflictError(
@@ -1570,7 +1589,7 @@ def list_case_appointments(db: DbSession, user: CurrentUser, case_id: int) -> li
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
     return _appointments_payload(db, case)
 
 
@@ -1589,7 +1608,7 @@ def propose_case_appointment(
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
 
     db.add(
         CaseAppointment(
@@ -1649,7 +1668,7 @@ def _set_appointment_status(
             code="case_not_found",
             details={"case_id": case_id},
         )
-    _ensure_case_party(case, user)
+    _ensure_case_party(db, case, user)
     appointment = _get_appointment_or_404(db, case.id, appointment_id)
     if appointment.status == "CANCELLED":
         raise ConflictError(

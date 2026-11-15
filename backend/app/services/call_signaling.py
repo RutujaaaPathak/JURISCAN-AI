@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import SessionLocal
-from app.models import Call, Case, User
+from app.models import Call, Case, LawyerProfile, User
 from app.services.realtime import display_name
 
 
@@ -77,12 +77,23 @@ def is_case_call_party(case: Case, user_id: int) -> bool:
 
 
 def load_call_authorized_case(case_id: int, user_id: int) -> Case | None:
-    """Return the Case if user_id is authorized to participate in calls for it."""
+    """Return the Case if user_id is an active, verified call participant."""
     db = SessionLocal()
     try:
+        user = db.get(User, user_id)
+        if user is None or not user.is_active:
+            return None
         case = db.get(Case, case_id)
         if case is None or not is_case_call_party(case, user_id):
             return None
+        if user.role == "lawyer" and case.assigned_lawyer_id == user_id:
+            status = db.scalar(
+                select(LawyerProfile.verification_status).where(
+                    LawyerProfile.user_id == user_id
+                )
+            )
+            if status != "VERIFIED":
+                return None
         return case
     finally:
         db.close()

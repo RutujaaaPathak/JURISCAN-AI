@@ -9,6 +9,8 @@ updates without a page reload.
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -17,7 +19,7 @@ from app.api.deps import get_current_user
 from app.config import settings
 from app.core.database import SessionLocal
 from app.core.security import create_access_token
-from app.models import User
+from app.models import LawyerProfile, User
 
 CASE_PAYLOAD = {
     "title": "Boundary dispute with neighbour",
@@ -27,7 +29,9 @@ CASE_PAYLOAD = {
 }
 
 
-def _make_user(role: str, name: str) -> User:
+def _make_user(
+    role: str, name: str, verification_status: str | None = "VERIFIED"
+) -> User:
     db = SessionLocal()
     try:
         user = User(
@@ -37,6 +41,13 @@ def _make_user(role: str, name: str) -> User:
             role=role,
         )
         db.add(user)
+        db.flush()
+        if role == "lawyer" and verification_status is not None:
+            db.add(
+                LawyerProfile(
+                    user_id=user.id, verification_status=verification_status
+                )
+            )
         db.commit()
         db.refresh(user)
         db.expunge(user)
@@ -45,8 +56,10 @@ def _make_user(role: str, name: str) -> User:
         db.close()
 
 
-def _token(user: User) -> str:
-    return create_access_token(user.id, secret=settings.secret_key, ttl_seconds=3600)
+def _token(user: User, ttl_seconds: int = 3600) -> str:
+    return create_access_token(
+        user.id, secret=settings.secret_key, ttl_seconds=ttl_seconds
+    )
 
 
 @pytest.fixture
@@ -73,10 +86,12 @@ def _assigned_case(client: TestClient, login) -> tuple[User, User, int]:
     return client_user, lawyer, case_id
 
 
-def _open(client: TestClient, case_id: int, user: User):
+def _open(
+    client: TestClient, case_id: int, user: User, ttl_seconds: int = 3600
+):
     websocket = client.websocket_connect(f"/api/cases/{case_id}/ws")
     websocket.__enter__()
-    websocket.send_json({"type": "auth", "token": _token(user)})
+    websocket.send_json({"type": "auth", "token": _token(user, ttl_seconds)})
     ready = websocket.receive_json()
     assert ready["type"] == "ready"
     assert ready["user_id"] == user.id
@@ -265,5 +280,98 @@ def test_empty_websocket_message_is_rejected(client: TestClient, login):
         error = websocket.receive_json()
         assert error["type"] == "error"
         assert error["code"] == "empty_message"
+    finally:
+        _close(websocket)
+
+
+def test_suspended_account_is_disconnected_on_next_event(
+    client: TestClient, login
+):
+    _client_user, lawyer, case_id = _assigned_case(client, login)
+    websocket = _open(client, case_id, lawyer)
+    try:
+        db = SessionLocal()
+        try:
+            user = db.get(User, lawyer.id)
+            user.is_active = False
+            db.commit()
+        finally:
+            db.close()
+
+        websocket.send_json({"type": "message", "body": "still here?"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "session_invalid"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4401
+    finally:
+        _close(websocket)
+
+
+def test_expired_token_is_disconnected_on_next_event(
+    client: TestClient, login
+):
+    _client_user, lawyer, case_id = _assigned_case(client, login)
+    websocket = _open(client, case_id, lawyer, ttl_seconds=1)
+    try:
+        time.sleep(2.1)
+        websocket.send_json({"type": "ping"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "session_invalid"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4401
+    finally:
+        _close(websocket)
+
+
+def test_revoked_token_disconnects_existing_websocket(
+    client: TestClient, login
+):
+    _client_user, lawyer, case_id = _assigned_case(client, login)
+    websocket = _open(client, case_id, lawyer)
+    try:
+        db = SessionLocal()
+        try:
+            user = db.get(User, lawyer.id)
+            user.token_version += 1
+            db.commit()
+        finally:
+            db.close()
+
+        websocket.send_json({"type": "ping"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "session_invalid"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4401
+    finally:
+        _close(websocket)
+
+
+def test_revoked_verification_blocks_realtime_messages(
+    client: TestClient, login
+):
+    _client_user, lawyer, case_id = _assigned_case(client, login)
+    websocket = _open(client, case_id, lawyer)
+    try:
+        db = SessionLocal()
+        try:
+            profile = db.query(LawyerProfile).filter_by(user_id=lawyer.id).one()
+            profile.verification_status = "PENDING"
+            db.commit()
+        finally:
+            db.close()
+
+        websocket.send_json({"type": "message", "body": "still allowed?"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "not_authorized"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4403
     finally:
         _close(websocket)
