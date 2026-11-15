@@ -37,6 +37,7 @@ from app.schemas.calls import (
     CallRead,
 )
 from app.services.call_signaling import (
+    CallConnection,
     calculate_duration,
     call_public_payload,
     call_signaling_manager,
@@ -55,6 +56,8 @@ WS_BAD_REQUEST = 4400
 WS_UNAUTHORIZED = 4401
 WS_FORBIDDEN = 4403
 WS_AUTH_TIMEOUT = 4408
+
+_cleanup_tasks: set[asyncio.Task[None]] = set()
 
 
 def _cleanup_stale_calls(db: Session, case_id: int) -> None:
@@ -484,6 +487,23 @@ async def _handle_signaling_event(
     return None
 
 
+def _schedule_call_cleanup(
+    conn: CallConnection, case_id: int, user_id: int
+) -> asyncio.Task[None]:
+    async def cleanup() -> None:
+        await call_signaling_manager.disconnect(conn)
+        await call_signaling_manager.send_to_peer(
+            case_id,
+            user_id,
+            {"type": "peer_disconnected", "user_id": user_id, "case_id": case_id},
+        )
+
+    task = asyncio.create_task(cleanup())
+    _cleanup_tasks.add(task)
+    task.add_done_callback(_cleanup_tasks.discard)
+    return task
+
+
 @router.websocket("/cases/{case_id}/calls/ws")
 async def call_signaling_socket(websocket: WebSocket, case_id: int) -> None:
     await websocket.accept()
@@ -534,12 +554,8 @@ async def call_signaling_socket(websocket: WebSocket, case_id: int) -> None:
             await watcher
         except asyncio.CancelledError:
             pass
-        await call_signaling_manager.disconnect(conn)
-        await call_signaling_manager.send_to_peer(
-            case_id,
-            user.id,
-            {"type": "peer_disconnected", "user_id": user.id, "case_id": case_id},
-        )
+        cleanup = _schedule_call_cleanup(conn, case_id, user.id)
+        await asyncio.shield(cleanup)
 
 
 __all__ = ["router"]
