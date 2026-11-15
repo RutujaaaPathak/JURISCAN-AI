@@ -19,9 +19,11 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import WebSocket
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.models import Case, CaseMessage
+from app.models import Case, CaseMessage, LawyerProfile, User
 
 
 def display_name(user: Any | None) -> str | None:
@@ -65,15 +67,36 @@ def is_case_party(case: Case, user_id: int) -> bool:
     return user_id in (case.posted_by_user_id, case.assigned_lawyer_id)
 
 
+def _load_authorized_case(db: Session, case_id: int, user_id: int) -> Case | None:
+    """Resolve the case only for an active, authorized party.
+
+    A lawyer must also still be verified: a session that was opened while the
+    account was verified must not keep access after verification is revoked.
+    """
+
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        return None
+    case = db.get(Case, case_id)
+    if case is None or not is_case_party(case, user_id):
+        return None
+    if user.role == "lawyer" and case.assigned_lawyer_id == user_id:
+        status = db.scalar(
+            select(LawyerProfile.verification_status).where(
+                LawyerProfile.user_id == user_id
+            )
+        )
+        if status != "VERIFIED":
+            return None
+    return case
+
+
 def load_authorized_case(case_id: int, user_id: int) -> Case | None:
-    """Return the case iff ``user_id`` is one of its two assigned parties."""
+    """Return the case iff ``user_id`` is one of its two active assigned parties."""
 
     db = SessionLocal()
     try:
-        case = db.get(Case, case_id)
-        if case is None or not is_case_party(case, user_id):
-            return None
-        return case
+        return _load_authorized_case(db, case_id, user_id)
     finally:
         db.close()
 
@@ -88,8 +111,8 @@ def persist_message(case_id: int, user_id: int, body: str) -> dict[str, Any] | N
 
     db = SessionLocal()
     try:
-        case = db.get(Case, case_id)
-        if case is None or not is_case_party(case, user_id):
+        case = _load_authorized_case(db, case_id, user_id)
+        if case is None:
             return None
         message = CaseMessage(case_id=case_id, sender_user_id=user_id, body=body)
         db.add(message)

@@ -43,6 +43,7 @@ router = APIRouter(tags=["realtime"])
 
 AUTH_TIMEOUT_SECONDS = 10.0
 MAX_MESSAGE_LENGTH = 5000
+SESSION_RECHECK_SECONDS = 15.0
 
 WS_BAD_REQUEST = 4400
 WS_UNAUTHORIZED = 4401
@@ -67,6 +68,38 @@ def _authenticate(token: str | None) -> User | None:
         db.close()
 
 
+def _validate_session(token: str | None, user_id: int) -> bool:
+    """Re-resolve the token and account status for an existing socket."""
+
+    from app.api.deps import authenticate_token, validate_session_token
+
+    db = SessionLocal()
+    try:
+        if token:
+            return validate_session_token(db, token, user_id)
+        user = authenticate_token(db, None)
+        return user is not None and user.id == user_id
+    finally:
+        db.close()
+
+
+async def _watch_session(
+    websocket: WebSocket, token: str | None, user_id: int
+) -> None:
+    """Close a connection when its session expires or the account is disabled."""
+
+    try:
+        while True:
+            await asyncio.sleep(SESSION_RECHECK_SECONDS)
+            if not await run_in_threadpool(_validate_session, token, user_id):
+                await websocket.close(code=WS_UNAUTHORIZED)
+                return
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        return
+
+
 def _extract_token(raw: str) -> tuple[bool, str | None]:
     """Return ``(is_auth_frame, token)`` for the first client frame."""
 
@@ -89,45 +122,53 @@ async def _send(websocket: WebSocket, payload: dict[str, Any]) -> bool:
 
 
 async def _handle_event(
-    websocket: WebSocket, case_id: int, user_id: int, raw: str
-) -> bool:
-    """Handle one inbound frame. Returns ``False`` when the socket must close."""
+    websocket: WebSocket,
+    case_id: int,
+    user_id: int,
+    token: str | None,
+    raw: str,
+) -> int | None:
+    """Handle one inbound frame. Returns a close code when the socket must close."""
+
+    if not await run_in_threadpool(_validate_session, token, user_id):
+        await _send(websocket, {"type": "error", "code": "session_invalid"})
+        return WS_UNAUTHORIZED
 
     try:
         data = json.loads(raw)
     except (ValueError, TypeError):
         await _send(websocket, {"type": "error", "code": "invalid_payload"})
-        return True
+        return None
     if not isinstance(data, dict):
         await _send(websocket, {"type": "error", "code": "invalid_payload"})
-        return True
+        return None
 
     event = data.get("type")
     if event == "ping":
         await _send(websocket, {"type": "pong"})
-        return True
+        return None
 
     if event in {"message", "send"}:
         body = data.get("body")
         body = body.strip() if isinstance(body, str) else ""
         if not body:
             await _send(websocket, {"type": "error", "code": "empty_message"})
-            return True
+            return None
         if len(body) > MAX_MESSAGE_LENGTH:
             await _send(websocket, {"type": "error", "code": "message_too_long"})
-            return True
+            return None
         # Authorization is re-checked inside persist_message for every event.
         payload = await run_in_threadpool(persist_message, case_id, user_id, body)
         if payload is None:
             await _send(websocket, {"type": "error", "code": "not_authorized"})
-            return False
+            return WS_FORBIDDEN
         await case_connections.broadcast(
             case_id, {"type": "message", "message": payload}
         )
-        return True
+        return None
 
     await _send(websocket, {"type": "error", "code": "unknown_event"})
-    return True
+    return None
 
 
 @router.websocket("/cases/{case_id}/ws")
@@ -163,17 +204,25 @@ async def case_workspace_socket(websocket: WebSocket, case_id: int) -> None:
     await _send(
         websocket, {"type": "ready", "case_id": case_id, "user_id": user.id}
     )
+    watcher = asyncio.create_task(_watch_session(websocket, token, user.id))
 
     try:
         while True:
             raw = await websocket.receive_text()
-            keep_open = await _handle_event(websocket, case_id, user.id, raw)
-            if not keep_open:
-                await websocket.close(code=WS_FORBIDDEN)
+            close_code = await _handle_event(
+                websocket, case_id, user.id, token, raw
+            )
+            if close_code is not None:
+                await websocket.close(code=close_code)
                 break
     except WebSocketDisconnect:
         pass
     finally:
+        watcher.cancel()
+        try:
+            await watcher
+        except asyncio.CancelledError:
+            pass
         await case_connections.disconnect(connection)
 
 

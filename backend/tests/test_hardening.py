@@ -12,10 +12,12 @@ import pytest
 
 from app.api.deps import get_current_user
 from app.core.database import SessionLocal
-from app.models import User
+from app.models import LawyerProfile, User
 
 
-def _make_user(role: str, name: str) -> User:
+def _make_user(
+    role: str, name: str, verification_status: str | None = "VERIFIED"
+) -> User:
     db = SessionLocal()
     try:
         user = User(
@@ -25,6 +27,13 @@ def _make_user(role: str, name: str) -> User:
             role=role,
         )
         db.add(user)
+        db.flush()
+        if role == "lawyer" and verification_status is not None:
+            db.add(
+                LawyerProfile(
+                    user_id=user.id, verification_status=verification_status
+                )
+            )
         db.commit()
         db.refresh(user)
         db.expunge(user)

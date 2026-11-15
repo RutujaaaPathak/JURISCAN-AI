@@ -26,6 +26,7 @@ from app.core.ratelimit import SlidingWindowRateLimiter
 
 REGISTER = "/api/auth/register"
 LOGIN = "/api/auth/login"
+ACCEPT_INVITATION = "/api/company/invitations/accept"
 
 
 def _limits_factory(limit: int, window: float):
@@ -44,10 +45,13 @@ def _reset_auth_limiter():
     """Start and end every test with clean rate-limit counters."""
 
     from app.api import auth as auth_module
+    from app.api import company as company_module
 
     auth_module._auth_rate_limiter.reset()
+    company_module._invitation_accept_limiter.reset()
     yield
     auth_module._auth_rate_limiter.reset()
+    company_module._invitation_accept_limiter.reset()
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +167,33 @@ def test_register_is_rate_limited_after_max_attempts(client: TestClient, monkeyp
     throttled = client.post(REGISTER, json={})
     assert throttled.status_code == 429
     assert throttled.json()["error"]["code"] == "rate_limited"
+
+
+def test_invitation_accept_is_rate_limited_after_max_attempts(
+    client: TestClient, monkeypatch
+):
+    monkeypatch.setattr(
+        settings, "company_invitation_rate_limit_max_requests", 2
+    )
+    monkeypatch.setattr(
+        settings, "company_invitation_rate_limit_window_seconds", 60
+    )
+
+    payload = {
+        "token": "not-a-real-invitation-token",
+        "full_name": "Invite Test",
+        "password": "supersecret1",
+    }
+    for _ in range(2):
+        response = client.post(ACCEPT_INVITATION, json=payload)
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "invalid_invitation"
+
+    throttled = client.post(ACCEPT_INVITATION, json=payload)
+    assert throttled.status_code == 429
+    assert throttled.json()["error"]["code"] == "rate_limited"
+    retry_after = throttled.headers["Retry-After"]
+    assert retry_after.isdigit() and int(retry_after) >= 1
 
 
 def test_rate_limit_does_not_leak_between_tests(client: TestClient, monkeypatch):

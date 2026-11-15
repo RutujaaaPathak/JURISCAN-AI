@@ -10,6 +10,7 @@ Covers:
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -20,7 +21,7 @@ from app.api.deps import get_current_user
 from app.config import settings
 from app.core.database import SessionLocal
 from app.core.security import create_access_token
-from app.models import Call, Case, User
+from app.models import Call, Case, LawyerProfile, User
 
 CASE_PAYLOAD = {
     "title": "Property title dispute",
@@ -30,7 +31,9 @@ CASE_PAYLOAD = {
 }
 
 
-def _make_user(role: str, name: str) -> User:
+def _make_user(
+    role: str, name: str, verification_status: str | None = "VERIFIED"
+) -> User:
     db = SessionLocal()
     try:
         user = User(
@@ -40,6 +43,13 @@ def _make_user(role: str, name: str) -> User:
             role=role,
         )
         db.add(user)
+        db.flush()
+        if role == "lawyer" and verification_status is not None:
+            db.add(
+                LawyerProfile(
+                    user_id=user.id, verification_status=verification_status
+                )
+            )
         db.commit()
         db.refresh(user)
         db.expunge(user)
@@ -48,8 +58,10 @@ def _make_user(role: str, name: str) -> User:
         db.close()
 
 
-def _token(user: User) -> str:
-    return create_access_token(user.id, secret=settings.secret_key, ttl_seconds=3600)
+def _token(user: User, ttl_seconds: int = 3600) -> str:
+    return create_access_token(
+        user.id, secret=settings.secret_key, ttl_seconds=ttl_seconds
+    )
 
 
 @pytest.fixture
@@ -76,10 +88,12 @@ def _assigned_case(client: TestClient, login) -> tuple[User, User, int]:
     return client_user, lawyer, case_id
 
 
-def _open_call_ws(client: TestClient, case_id: int, user: User):
+def _open_call_ws(
+    client: TestClient, case_id: int, user: User, ttl_seconds: int = 3600
+):
     websocket = client.websocket_connect(f"/api/cases/{case_id}/calls/ws")
     websocket.__enter__()
-    websocket.send_json({"type": "auth", "token": _token(user)})
+    websocket.send_json({"type": "auth", "token": _token(user, ttl_seconds)})
     ready = websocket.receive_json()
     assert ready["type"] == "ready"
     assert ready["user_id"] == user.id
@@ -348,6 +362,147 @@ def test_websocket_stranger_cannot_connect(client: TestClient, login):
     assert excinfo.value.code == 4403
 
 
+def test_unverified_assigned_lawyer_cannot_use_calls(client: TestClient, login):
+    client_user = _make_user("individual", "call-unverified-client")
+    lawyer = _make_user(
+        "lawyer", "call-unverified-lawyer", verification_status="PENDING"
+    )
+    login(client_user)
+    case_id = client.post("/api/cases", json=CASE_PAYLOAD).json()["id"]
+
+    db = SessionLocal()
+    try:
+        case = db.get(Case, case_id)
+        case.status = "ASSIGNED"
+        case.assigned_lawyer_id = lawyer.id
+        db.commit()
+    finally:
+        db.close()
+
+    login(lawyer)
+    denied = client.post(f"/api/cases/{case_id}/calls")
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "lawyer_verification_required"
+
+
+def test_suspended_account_call_socket_is_disconnected(
+    client: TestClient, login
+):
+    client_user, _lawyer, case_id = _assigned_case(client, login)
+    websocket = _open_call_ws(client, case_id, client_user)
+    try:
+        db = SessionLocal()
+        try:
+            user = db.get(User, client_user.id)
+            user.is_active = False
+            db.commit()
+        finally:
+            db.close()
+
+        websocket.send_json({"type": "ping"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "session_invalid"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4401
+    finally:
+        _close_ws(websocket)
+
+
+def test_expired_token_call_socket_is_disconnected(
+    client: TestClient, login
+):
+    client_user, _lawyer, case_id = _assigned_case(client, login)
+    websocket = _open_call_ws(client, case_id, client_user, ttl_seconds=1)
+    try:
+        time.sleep(2.1)
+        websocket.send_json({"type": "ping"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "session_invalid"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4401
+    finally:
+        _close_ws(websocket)
+
+
+def test_revoked_token_call_socket_is_disconnected(
+    client: TestClient, login
+):
+    client_user, _lawyer, case_id = _assigned_case(client, login)
+    websocket = _open_call_ws(client, case_id, client_user)
+    try:
+        db = SessionLocal()
+        try:
+            user = db.get(User, client_user.id)
+            user.token_version += 1
+            db.commit()
+        finally:
+            db.close()
+
+        websocket.send_json({"type": "ping"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "session_invalid"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4401
+    finally:
+        _close_ws(websocket)
+
+
+def test_call_socket_rechecks_case_authorization_per_event(
+    client: TestClient, login
+):
+    _client_user, lawyer, case_id = _assigned_case(client, login)
+    websocket = _open_call_ws(client, case_id, lawyer)
+    try:
+        db = SessionLocal()
+        try:
+            case = db.get(Case, case_id)
+            case.assigned_lawyer_id = None
+            db.commit()
+        finally:
+            db.close()
+
+        websocket.send_json({"type": "ping"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "not_authorized"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4403
+    finally:
+        _close_ws(websocket)
+
+
+def test_call_socket_rejects_revoked_lawyer_verification(
+    client: TestClient, login
+):
+    _client_user, lawyer, case_id = _assigned_case(client, login)
+    websocket = _open_call_ws(client, case_id, lawyer)
+    try:
+        db = SessionLocal()
+        try:
+            profile = db.query(LawyerProfile).filter_by(user_id=lawyer.id).one()
+            profile.verification_status = "REJECTED"
+            db.commit()
+        finally:
+            db.close()
+
+        websocket.send_json({"type": "ping"})
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "not_authorized"}
+
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            websocket.receive_json()
+        assert excinfo.value.code == 4403
+    finally:
+        _close_ws(websocket)
+
+
 def test_websocket_signaling_exchange_offer_answer_and_ice(client: TestClient, login):
     client_user, lawyer, case_id = _assigned_case(client, login)
 
@@ -424,6 +579,41 @@ def test_websocket_disconnect_notifies_peer(client: TestClient, login):
 
     finally:
         _close_ws(lawyer_ws)
+
+
+def test_call_socket_rejects_signaling_for_another_case(client: TestClient, login):
+    client_user, lawyer, case_id = _assigned_case(client, login)
+
+    # A second case where the same two users are the assigned parties.
+    login(client_user)
+    second_case = client.post("/api/cases", json=CASE_PAYLOAD)
+    assert second_case.status_code == 201, second_case.text
+    second_case_id = second_case.json()["id"]
+    login(lawyer)
+    assert (
+        client.post(f"/api/cases/{second_case_id}/accept").status_code == 200
+    )
+
+    login(client_user)
+    call_id = client.post(f"/api/cases/{case_id}/calls").json()["id"]
+
+    # Signaling on the second case must not authorize a call from the first.
+    websocket = _open_call_ws(client, second_case_id, client_user)
+    try:
+        websocket.send_json(
+            {
+                "type": "offer",
+                "call_id": call_id,
+                "sdp": {"type": "offer", "sdp": "v=0\r\n"},
+            }
+        )
+        error = websocket.receive_json()
+        assert error == {"type": "error", "code": "forbidden_call"}
+
+        websocket.send_json({"type": "ping"})
+        assert websocket.receive_json() == {"type": "pong"}
+    finally:
+        _close_ws(websocket)
 
 
 def test_stale_abandoned_ringing_call_cleanup(client: TestClient, login):

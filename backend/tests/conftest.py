@@ -8,9 +8,10 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["APP_ENV"] = "test"
 os.environ["ALLOW_DEMO_USER"] = "true"
 os.environ["SECRET_KEY"] = "test-only-secret-key-that-is-long-enough-1234567890"
-# The whole suite shares one TestClient (one source IP). Disable the auth
-# rate limiter globally; tests/test_rate_limit.py re-enables it explicitly.
+# The whole suite shares one TestClient (one source IP). Disable the auth and
+# invitation rate limiters globally; tests/test_rate_limit.py re-enables them.
 os.environ["AUTH_RATE_LIMIT_MAX_REQUESTS"] = "0"
+os.environ["COMPANY_INVITATION_RATE_LIMIT_MAX_REQUESTS"] = "0"
 
 import pytest
 from fastapi.testclient import TestClient
