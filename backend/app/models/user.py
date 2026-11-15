@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, String
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -28,6 +28,12 @@ class User(Base, TimestampMixin):
     # Company accounts store their organisation name here; null for other roles.
     organization_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Monotonic session generation. Every issued token carries the value it was
+    # created with; logout and password changes increment this column so older
+    # tokens are rejected immediately without a per-token blocklist.
+    token_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"), nullable=False
+    )
     # Workspace role. Authorization is enforced server-side against this value.
     # It is set from the authenticated account (see app/api/deps.py); outside
     # production an unauthenticated request still falls back to a shared demo

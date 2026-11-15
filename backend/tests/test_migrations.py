@@ -17,6 +17,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 
 @pytest.fixture
@@ -176,6 +177,240 @@ def test_migration_preserves_existing_data(migration_db):
         assert row["parent_id"] is None
 
     engine.dispose()
+
+
+def _document_indexes(db_url: str) -> dict[str, dict]:
+    engine = create_engine(db_url)
+    try:
+        return {ix["name"]: ix for ix in inspect(engine).get_indexes("documents")}
+    finally:
+        engine.dispose()
+
+
+def test_content_hash_uniqueness_is_scoped_by_tenant(migration_db):
+    cfg, db_url = migration_db
+
+    command.upgrade(cfg, "head")
+
+    indexes = _document_indexes(db_url)
+    assert bool(indexes["ix_documents_content_hash"]["unique"]) is False
+    assert bool(indexes["ix_documents_company_content_hash"]["unique"]) is True
+    assert bool(indexes["ix_documents_user_personal_content_hash"]["unique"]) is True
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, username, is_active) VALUES "
+                "(1, 'a@example.com', 'a', 1), "
+                "(2, 'b@example.com', 'b', 1)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO companies (id, name) VALUES "
+                "(1, 'Alpha'), (2, 'Beta')"
+            )
+        )
+        # Identical content hashes are allowed across users and companies.
+        conn.execute(
+            text(
+                "INSERT INTO documents "
+                "(id, user_id, company_id, title, filename, file_type, status, content_hash) "
+                "VALUES "
+                "(1, 1, NULL, 'A personal', 'a.txt', 'txt', 'PROCESSED', 'shared-hash'), "
+                "(2, 2, NULL, 'B personal', 'b.txt', 'txt', 'PROCESSED', 'shared-hash'), "
+                "(3, 1, 1, 'A company', 'c.txt', 'txt', 'PROCESSED', 'shared-hash'), "
+                "(4, 2, 2, 'B company', 'd.txt', 'txt', 'PROCESSED', 'shared-hash')"
+            )
+        )
+
+    # Duplicates within the same personal workspace are still rejected.
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO documents "
+                    "(id, user_id, company_id, title, filename, file_type, status, content_hash) "
+                    "VALUES (5, 1, NULL, 'A personal copy', 'e.txt', 'txt', 'PROCESSED', 'shared-hash')"
+                )
+            )
+
+    # Duplicates within the same company are still rejected.
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO documents "
+                    "(id, user_id, company_id, title, filename, file_type, status, content_hash) "
+                    "VALUES (5, 1, 1, 'A company copy', 'f.txt', 'txt', 'PROCESSED', 'shared-hash')"
+                )
+            )
+
+    # Cross-tenant duplicates must be removed before a global unique index can
+    # be restored, so clear them and verify the downgrade path.
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM documents"))
+    engine.dispose()
+
+    command.downgrade(cfg, "ea6ee676292e")
+
+    indexes = _document_indexes(db_url)
+    assert bool(indexes["ix_documents_content_hash"]["unique"]) is True
+    assert "ix_documents_company_content_hash" not in indexes
+    assert "ix_documents_user_personal_content_hash" not in indexes
+
+    command.upgrade(cfg, "head")
+    indexes = _document_indexes(db_url)
+    assert bool(indexes["ix_documents_content_hash"]["unique"]) is False
+    assert bool(indexes["ix_documents_company_content_hash"]["unique"]) is True
+
+
+def test_migration_preserves_cross_tenant_duplicate_hashes(migration_db):
+    cfg, db_url = migration_db
+
+    command.upgrade(cfg, "ea6ee676292e")
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        # Simulate a database whose legacy global unique index was removed or
+        # bypassed before this migration runs.
+        conn.execute(text("DROP INDEX ix_documents_content_hash"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, username, is_active) VALUES "
+                "(1, 'a@example.com', 'a', 1), "
+                "(2, 'b@example.com', 'b', 1)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO companies (id, name) VALUES "
+                "(1, 'Alpha'), (2, 'Beta')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO documents "
+                "(id, user_id, company_id, title, filename, file_type, status, content_hash) "
+                "VALUES "
+                "(1, 1, NULL, 'A personal', 'a.txt', 'txt', 'PROCESSED', 'shared-hash'), "
+                "(2, 2, NULL, 'B personal', 'b.txt', 'txt', 'PROCESSED', 'shared-hash'), "
+                "(3, 1, 1, 'A company', 'c.txt', 'txt', 'PROCESSED', 'shared-hash'), "
+                "(4, 2, 2, 'B company', 'd.txt', 'txt', 'PROCESSED', 'shared-hash')"
+            )
+        )
+    engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id, user_id, company_id, content_hash FROM documents ORDER BY id")
+        ).mappings().all()
+    engine.dispose()
+
+    assert len(rows) == 4
+    assert {row["content_hash"] for row in rows} == {"shared-hash"}
+    assert [row["company_id"] for row in rows] == [None, None, 1, 2]
+
+    indexes = _document_indexes(db_url)
+    assert bool(indexes["ix_documents_company_content_hash"]["unique"]) is True
+    assert bool(indexes["ix_documents_user_personal_content_hash"]["unique"]) is True
+    assert bool(indexes["ix_documents_content_hash"]["unique"]) is False
+
+
+def test_migration_aborts_on_same_scope_duplicates(migration_db):
+    cfg, db_url = migration_db
+
+    command.upgrade(cfg, "ea6ee676292e")
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(text("DROP INDEX ix_documents_content_hash"))
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, username, is_active) "
+                "VALUES (1, 'a@example.com', 'a', 1)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO documents "
+                "(id, user_id, company_id, title, filename, file_type, status, content_hash) "
+                "VALUES "
+                "(1, 1, NULL, 'A one', 'a.txt', 'txt', 'PROCESSED', 'duplicate-hash'), "
+                "(2, 1, NULL, 'A two', 'b.txt', 'txt', 'PROCESSED', 'duplicate-hash')"
+            )
+        )
+    engine.dispose()
+
+    with pytest.raises(RuntimeError, match="duplicate content-hash"):
+        command.upgrade(cfg, "head")
+
+    # The migration aborts before changing the schema or touching the rows.
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM documents")).scalar() == 2
+    engine.dispose()
+
+    indexes = _document_indexes(db_url)
+    assert "ix_documents_company_content_hash" not in indexes
+    assert "ix_documents_user_personal_content_hash" not in indexes
+
+
+def test_token_version_migration_backfills_existing_users(migration_db):
+    cfg, db_url = migration_db
+
+    # 1. Upgrade to the revision immediately before token versioning.
+    command.upgrade(cfg, "4a299ac7e3ed")
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, username, is_active) VALUES "
+                "(1, 'existing@example.com', 'existing', 1), "
+                "(2, 'disabled@example.com', 'disabled', 0)"
+            )
+        )
+    engine.dispose()
+
+    # 2. Add token_version; existing active and disabled rows are backfilled.
+    command.upgrade(cfg, "head")
+
+    engine = create_engine(db_url)
+    columns = {col["name"]: col for col in inspect(engine).get_columns("users")}
+    assert "token_version" in columns
+    assert columns["token_version"]["nullable"] is False
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id, token_version FROM users ORDER BY id")
+        ).mappings().all()
+    engine.dispose()
+    assert [row["token_version"] for row in rows] == [1, 1]
+
+    # 3. Downgrade removes the column without touching user rows.
+    command.downgrade(cfg, "4a299ac7e3ed")
+    engine = create_engine(db_url)
+    columns_down = {
+        col["name"] for col in inspect(engine).get_columns("users")
+    }
+    assert "token_version" not in columns_down
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM users")).scalar() == 2
+    engine.dispose()
+
+    # 4. Re-upgrading safely restores the default for the existing users.
+    command.upgrade(cfg, "head")
+    engine = create_engine(db_url)
+    with engine.connect() as conn:
+        versions = conn.execute(
+            text("SELECT token_version FROM users ORDER BY id")
+        ).scalars().all()
+    engine.dispose()
+    assert versions == [1, 1]
 
 
 def test_quality_intelligence_migration_upgrade_and_downgrade(migration_db):
