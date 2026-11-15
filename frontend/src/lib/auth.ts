@@ -71,12 +71,21 @@ export async function fetchCurrentUser(): Promise<AuthUser> {
   return api.get<AuthUser>("/auth/me")
 }
 
+/**
+ * Revoke the current session server-side. Callers must still clear the local
+ * token afterwards, but a client-only localStorage clear is never treated as a
+ * logout by the backend.
+ */
+export async function logoutAccount(): Promise<void> {
+  await api.post<void>("/auth/logout")
+}
+
 export interface AuthContextValue {
   user: AuthUser | null
   status: "loading" | "authenticated" | "anonymous"
   login: (email: string, password: string) => Promise<AuthUser>
   register: (payload: RegisterPayload) => Promise<AuthUser>
-  logout: () => void
+  logout: () => Promise<void>
   /** Re-fetch the authenticated user (e.g. after a profile update). */
   refresh: () => Promise<void>
 }

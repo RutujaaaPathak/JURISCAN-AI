@@ -94,8 +94,7 @@ function AccountMenu() {
               role="menuitem"
               onClick={() => {
                 setOpen(false)
-                logout()
-                navigate("/")
+                void logout().finally(() => navigate("/"))
               }}
               className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
             >
@@ -200,8 +199,7 @@ export function Navbar() {
                   size="sm"
                   onClick={() => {
                     setOpen(false)
-                    logout()
-                    navigate("/")
+                    void logout().finally(() => navigate("/"))
                   }}
                 >
                   <LogOut className="size-4" aria-hidden="true" />
