@@ -12,12 +12,12 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CompanyUser, DbSession
 from app.core.exceptions import NotFoundError, ValidationFailed
-from app.models import Analysis, Clause, Document, User
+from app.models import Analysis, Clause, Document
 from app.schemas.company import (
     AuditActivity,
     AuditReportDetail,
@@ -41,37 +41,18 @@ def _document_query():
     )
 
 
-def _company_user_ids(db: DbSession, company_id: int) -> list[int]:
-    return list(db.scalars(select(User.id).where(User.company_id == company_id)).all())
-
-
-def _company_scope_filter(db: DbSession, company_id: int):
-    member_ids = _company_user_ids(db, company_id)
-    if member_ids:
-        return or_(
-            Document.company_id == company_id,
-            and_(Document.company_id.is_(None), Document.user_id.in_(member_ids)),
-        )
+def _company_scope_filter(company_id: int):
     return Document.company_id == company_id
 
 
 def _company_documents(db: DbSession, company_id: int) -> list[Document]:
-    docs = list(
+    return list(
         db.scalars(
             _document_query()
-            .where(_company_scope_filter(db, company_id))
+            .where(_company_scope_filter(company_id))
             .order_by(Document.updated_at.desc(), Document.id.desc())
         ).all()
     )
-    # Automatically backfill company_id for any eligible existing documents
-    need_commit = False
-    for doc in docs:
-        if doc.company_id is None:
-            doc.company_id = company_id
-            need_commit = True
-    if need_commit:
-        db.commit()
-    return docs
 
 
 def _get_company_document(
@@ -80,7 +61,7 @@ def _get_company_document(
     document = db.scalar(
         _document_query().where(
             Document.id == document_id,
-            _company_scope_filter(db, company_id),
+            _company_scope_filter(company_id),
         )
     )
     if document is None:
@@ -91,9 +72,6 @@ def _get_company_document(
             code="audit_report_not_found",
             details={"document_id": document_id},
         )
-    if document.company_id is None:
-        document.company_id = company_id
-        db.commit()
     return document
 
 
@@ -119,7 +97,7 @@ def list_audit_reports(
 ) -> dict:
     assert user.company_id is not None
 
-    stmt = _document_query().where(_company_scope_filter(db, user.company_id))
+    stmt = _document_query().where(_company_scope_filter(user.company_id))
     if q and q.strip():
         pattern = f"%{q.strip().lower()}%"
         stmt = stmt.where(
@@ -130,13 +108,6 @@ def list_audit_reports(
         )
     stmt = stmt.order_by(Document.updated_at.desc(), Document.id.desc())
     documents = list(db.scalars(stmt).all())
-    need_commit = False
-    for doc in documents:
-        if doc.company_id is None:
-            doc.company_id = user.company_id
-            need_commit = True
-    if need_commit:
-        db.commit()
 
     summaries = [summary_payload(document) for document in documents]
     if risk_level:

@@ -290,28 +290,26 @@ def test_company_upload_contract_automatically_appears_in_audit_reports(client: 
     assert overview["avg_risk_score"] == uploaded_doc["risk_score"]
 
 
-def test_existing_unassigned_document_automatically_linked_to_company(client: TestClient):
+def test_personal_document_remains_private_and_not_backfilled_to_company(client: TestClient):
     company = _make_company("Epsilon Tech")
     user, headers = _make_user(
         "company", "cto@epsilon.com", company_id=company.id, company_role="COMPANY_ADMIN"
     )
 
-    # Create an unassigned document (uploaded by user earlier without company_id)
+    # Create an unassigned personal document (uploaded by user earlier without company_id)
     doc = _make_document_with_analysis(user.id, None, "Early Startup NDA", risk_score=70.0)
 
-    # When the company lists audit reports, the document appears and is backfilled
+    # When the company lists audit reports, personal documents are excluded
     res = client.get("/api/company/audit-reports", headers=headers)
     assert res.status_code == 200
     data = res.json()
-    assert data["total"] == 1
-    assert data["items"][0]["document_id"] == doc.id
-    assert data["items"][0]["document_title"] == "Early Startup NDA"
+    assert data["total"] == 0
 
-    # Verify document now has company_id persisted in DB
+    # Verify document preserves company_id as None in DB (not backfilled or annexed)
     db = SessionLocal()
     try:
         refreshed = db.get(Document, doc.id)
-        assert refreshed.company_id == company.id
+        assert refreshed.company_id is None
     finally:
         db.close()
 

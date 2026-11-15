@@ -8,13 +8,23 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Query, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession
 from app.config import settings
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationFailed
-from app.models import Analysis, Case, CaseDocument, Clause, Company, Document, RiskFinding
+from app.models import (
+    Analysis,
+    Case,
+    CaseDocument,
+    Clause,
+    Company,
+    Document,
+    LawyerProfile,
+    RiskFinding,
+    User,
+)
 from app.schemas.documents import (
     AnalysisDetail,
     ClauseRead,
@@ -254,21 +264,32 @@ def _detail_payload(document: Document) -> dict:
     return payload
 
 
-def _shared_document_ids(user_id: int):
+def _shared_document_ids(user: User):
     """Document ids the user may read because they are linked to a case they
     posted or are the assigned lawyer for. This is the authorization rule that
     lets an accepted lawyer open a client's attached documents without granting
-    access to any other document."""
+    access to any other document.
 
+    An assigned lawyer must still be verified: losing verification must revoke
+    access to the client's confidential evidence immediately, without waiting
+    for the case to be reassigned.
+    """
+
+    assigned = Case.assigned_lawyer_id == user.id
+    if user.role == "lawyer":
+        assigned = and_(
+            assigned,
+            select(LawyerProfile.id)
+            .where(
+                LawyerProfile.user_id == user.id,
+                LawyerProfile.verification_status == "VERIFIED",
+            )
+            .exists(),
+        )
     return (
         select(CaseDocument.document_id)
         .join(Case, Case.id == CaseDocument.case_id)
-        .where(
-            or_(
-                Case.posted_by_user_id == user_id,
-                Case.assigned_lawyer_id == user_id,
-            )
-        )
+        .where(or_(Case.posted_by_user_id == user.id, assigned))
     )
 
 
@@ -278,10 +299,31 @@ def _company_scope_id(user) -> int | None:
     return None
 
 
+def _owned_document_condition(user):
+    """Documents the user uploaded and may still see.
+
+    Personal documents stay visible after joining or leaving a company. A
+    company document is only visible to its uploader while they are a member of
+    that same company, so leaving a workspace revokes access to its documents
+    without touching the user's personal ones.
+    """
+
+    company_id = _company_scope_id(user)
+    if company_id is None:
+        return and_(
+            Document.user_id == user.id,
+            Document.company_id.is_(None),
+        )
+    return and_(
+        Document.user_id == user.id,
+        or_(Document.company_id.is_(None), Document.company_id == company_id),
+    )
+
+
 def _readable_document_conditions(user) -> list:
     conditions = [
-        Document.user_id == user.id,
-        Document.id.in_(_shared_document_ids(user.id)),
+        Document.id.in_(_shared_document_ids(user)),
+        _owned_document_condition(user),
     ]
     company_id = _company_scope_id(user)
     if company_id is not None:
@@ -290,7 +332,7 @@ def _readable_document_conditions(user) -> list:
 
 
 def _listed_document_conditions(user) -> list:
-    conditions = [Document.user_id == user.id]
+    conditions = [_owned_document_condition(user)]
     company_id = _company_scope_id(user)
     if company_id is not None:
         conditions.append(Document.company_id == company_id)
@@ -319,7 +361,10 @@ def _ensure_can_delete(user, document: Document) -> None:
             "Viewers cannot delete documents.",
             code="insufficient_company_role",
         )
-    if document.user_id == user.id:
+    if document.user_id == user.id and (
+        document.company_id is None
+        or document.company_id == _company_scope_id(user)
+    ):
         return
     if (
         document.company_id is not None
@@ -377,18 +422,13 @@ async def upload_document(
                 details={"actual": user.company_role},
             )
         if user.company_id is None:
-            comp_name = (user.organization_name or user.full_name or "").strip()
-            if comp_name:
-                company = db.scalar(
-                    select(Company).where(func.lower(Company.name) == comp_name.lower())
-                )
-                if company is None:
-                    company = Company(name=comp_name)
-                    db.add(company)
-                    db.flush()
-                user.company_id = company.id
-                user.company_role = user.company_role or "COMPANY_ADMIN"
-                db.commit()
+            comp_name = (user.organization_name or user.full_name or "Workspace").strip()
+            company = Company(name=comp_name)
+            db.add(company)
+            db.flush()
+            user.company_id = company.id
+            user.company_role = user.company_role or "COMPANY_ADMIN"
+            db.commit()
         company_id = user.company_id
 
     data = await _read_upload(file, max_bytes)
@@ -531,10 +571,7 @@ def get_analysis(db: DbSession, user: CurrentUser, analysis_id: int) -> dict:
         .join(Document, Analysis.document_id == Document.id)
         .where(
             Analysis.id == analysis_id,
-            or_(
-                Document.user_id == user.id,
-                Document.id.in_(_shared_document_ids(user.id)),
-            ),
+            or_(*_readable_document_conditions(user)),
         )
     )
     if analysis is None:
@@ -553,7 +590,7 @@ def get_analysis(db: DbSession, user: CurrentUser, analysis_id: int) -> dict:
 @router.get("/stats/overview", response_model=OverviewStats)
 def overview_stats(db: DbSession, user: CurrentUser) -> dict:
     documents = list(
-        db.scalars(_document_query().where(Document.user_id == user.id)).all()
+        db.scalars(_document_query().where(_owned_document_condition(user))).all()
     )
     total = len(documents)
     processed = sum(1 for document in documents if document.status == "PROCESSED")
