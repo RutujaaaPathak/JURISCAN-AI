@@ -174,7 +174,11 @@ def team_overview(db: DbSession, user: CompanyUser) -> dict:
         if member.company_role in role_counts:
             role_counts[member.company_role] += 1
     return {
-        "company": CompanyProfile(id=company.id, name=company.name),
+        "company": CompanyProfile(
+            id=company.id,
+            name=company.name,
+            retention_days=company.retention_days,
+        ),
         "total_members": len(members),
         "active_members": sum(1 for member in members if member.is_active),
         "pending_invitations": len(pending),

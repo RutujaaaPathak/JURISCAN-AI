@@ -1,3 +1,7 @@
+import base64
+import binascii
+import json
+import re
 import secrets
 from pathlib import Path
 from typing import Literal
@@ -14,6 +18,64 @@ _INSECURE_SECRETS = {
     "secret",
     "secret-key",
 }
+
+_DOCUMENT_KEY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
+_DOCUMENT_KEY_BYTES = 32
+
+
+class _DuplicateKeyId(ValueError):
+    pass
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise _DuplicateKeyId
+        result[key] = value
+    return result
+
+
+def parse_document_encryption_keys(raw: str) -> dict[str, str]:
+    if not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw, object_pairs_hook=_unique_object)
+    except _DuplicateKeyId:
+        raise ValueError(
+            "DOCUMENT_ENCRYPTION_KEYS must not contain duplicate key ids."
+        ) from None
+    except (json.JSONDecodeError, TypeError):
+        raise ValueError(
+            "DOCUMENT_ENCRYPTION_KEYS must be a JSON object mapping key ids "
+            "to base64-encoded 32-byte keys."
+        ) from None
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            "DOCUMENT_ENCRYPTION_KEYS must be a JSON object mapping key ids "
+            "to base64-encoded 32-byte keys."
+        )
+    for key_id, encoded in parsed.items():
+        if not isinstance(key_id, str) or not _DOCUMENT_KEY_ID.fullmatch(key_id):
+            raise ValueError(
+                "DOCUMENT_ENCRYPTION_KEYS contains an invalid key id."
+            )
+        if not isinstance(encoded, str):
+            raise ValueError(
+                "DOCUMENT_ENCRYPTION_KEYS values must be base64 strings."
+            )
+        try:
+            key = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            raise ValueError(
+                "DOCUMENT_ENCRYPTION_KEYS values must be valid base64."
+            ) from None
+        if len(key) != _DOCUMENT_KEY_BYTES:
+            raise ValueError(
+                "DOCUMENT_ENCRYPTION_KEYS values must decode to exactly "
+                "32 bytes."
+            )
+    return parsed
 
 
 class Settings(BaseSettings):
@@ -49,6 +111,9 @@ class Settings(BaseSettings):
     # key, so there is no known default that can be used to forge tokens.
     secret_key: str = ""
     access_token_ttl_seconds: int = 60 * 60 * 24 * 7
+
+    document_encryption_active_key_id: str = ""
+    document_encryption_keys: str = Field(default="", repr=False)
 
     # Brute-force protection for the unauthenticated auth endpoints
     # (/auth/login, /auth/register). Limits are per client IP, per process.
@@ -86,6 +151,11 @@ class Settings(BaseSettings):
     processing_stale_sweep_seconds: int = Field(default=300, ge=0)
     processing_max_concurrent_jobs: int = Field(default=2, ge=1, le=16)
 
+    # Default retention window applied to newly uploaded documents when the
+    # owning company has no explicit policy. Zero keeps documents until they
+    # are deleted explicitly; a legal hold always blocks deletion.
+    document_retention_days: int = Field(default=0, ge=0)
+
     # Company team invitations expire after this many hours. A fresh token is
     # required after expiry; only its hash is stored.
     company_invitation_ttl_hours: int = 24 * 7
@@ -102,6 +172,9 @@ class Settings(BaseSettings):
         env_file=BASE_DIR.parent / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        # Never echo submitted settings (including the document key ring) in
+        # validation error messages that may be written to startup logs.
+        hide_input_in_errors=True,
     )
 
     @model_validator(mode="after")
@@ -140,7 +213,36 @@ class Settings(BaseSettings):
             self.secret_key = secrets.token_urlsafe(48)
         return self
 
+    @model_validator(mode="after")
+    def validate_document_encryption_settings(self) -> "Settings":
+        raw = self.document_encryption_keys
+        active_key_id = self.document_encryption_active_key_id
+        if not raw.strip() and not active_key_id:
+            if self.app_env in ("production", "staging"):
+                raise ValueError(
+                    "DOCUMENT_ENCRYPTION_KEYS and "
+                    "DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID must be set in "
+                    f"{self.app_env}."
+                )
+            return self
+        if not raw.strip() or not active_key_id:
+            raise ValueError(
+                "DOCUMENT_ENCRYPTION_KEYS and "
+                "DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID must be set together."
+            )
+        keys = parse_document_encryption_keys(raw)
+        if not _DOCUMENT_KEY_ID.fullmatch(active_key_id):
+            raise ValueError(
+                "DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID is not a valid key id."
+            )
+        if active_key_id not in keys:
+            raise ValueError(
+                "DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID is not present in "
+                "DOCUMENT_ENCRYPTION_KEYS."
+            )
+        return self
+
 
 settings = Settings()
 
-__all__ = ["settings", "Settings"]
+__all__ = ["settings", "Settings", "parse_document_encryption_keys"]

@@ -99,6 +99,8 @@ def summary_payload(document: Document) -> dict:
         "high_risk_count": sum(
             1 for finding in findings if finding.severity in ("HIGH", "CRITICAL")
         ),
+        "legal_hold": document.legal_hold,
+        "retention_until": document.retention_until,
         "error_message": document.error_message
         or (analysis.error_message if analysis else None),
     }

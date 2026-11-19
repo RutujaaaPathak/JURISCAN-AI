@@ -2,8 +2,9 @@
 # see docker/backend.Dockerfile), nginx-served SPA with an /api reverse proxy.
 #
 # Usage (from the repository root):
-#   1. Put production values in .env (at minimum SECRET_KEY and DB_PASSWORD;
-#      generate a key with: python -c "import secrets; print(secrets.token_urlsafe(48))")
+#   1. Put production values in .env (at minimum SECRET_KEY, DB_PASSWORD, and
+#      the document encryption key ring; generate the session key with:
+#      python -c "import secrets; print(secrets.token_urlsafe(48))")
 #   2. docker compose up -d --build
 #
 # Variable substitution reads .env in this directory (the repo root). Values in
@@ -11,7 +12,7 @@
 # the backend never reads the dev .env inside the image.
 #
 # The :? guards fail fast on any compose command (down/ps/logs included) when
-# SECRET_KEY or DB_PASSWORD is missing — set them once in .env so every
+# SECRET_KEY, DB_PASSWORD, or document encryption settings are missing — set them once in .env so every
 # compose command works. The backend additionally validates at startup that
 # a production SECRET_KEY is at least 32 characters and not a known default.
 services:
@@ -41,6 +42,8 @@ services:
       APP_DEBUG: "false"
       ALLOW_DEMO_USER: "false"
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env (python -c "import secrets; print(secrets.token_urlsafe(48))")}
+      DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID: ${DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID:?set DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID in .env}
+      DOCUMENT_ENCRYPTION_KEYS: ${DOCUMENT_ENCRYPTION_KEYS:?set DOCUMENT_ENCRYPTION_KEYS in .env}
       DATABASE_URL: postgresql+psycopg://${DB_USER:-juriscan}:${DB_PASSWORD}@db:5432/${DB_NAME:-juriscan}
       FRONTEND_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
     volumes:

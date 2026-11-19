@@ -515,23 +515,33 @@ def test_upload_stores_file_under_managed_upload_dir(client):
     from app.config import settings
     from app.core.database import SessionLocal
     from app.models import Document
+    from app.services.document_content import document_file_bytes
 
     created = _upload_txt(client).json()
 
     with SessionLocal() as session:
-        stored = session.get(Document, created["id"]).storage_path
+        document = session.get(Document, created["id"])
+        stored = document.storage_path
+        decrypted = document_file_bytes(document)
+        assert document.encryption_version == 1
+        assert document.encryption_key_id
+        assert document.dek_wrapped
 
     assert stored is not None
     stored_path = Path(stored)
     upload_dir = (Path(settings.data_dir) / "uploads").resolve()
     assert stored_path.resolve().is_relative_to(upload_dir)
     assert stored_path.exists()
+    assert stored_path.suffix == ".jse"
+    assert stored_path.read_bytes().startswith(b"JSC1")
+    assert decrypted == SAMPLE_CONTRACT.encode("utf-8")
 
     detail = client.get(f"/api/documents/{created['id']}")
     assert "storage_path" not in detail.text
 
 
-def test_upload_sanitizes_a_traversal_filename(client):
+def test_upload_uses_opaque_path_for_a_traversal_filename(client):
+    import re
     from pathlib import Path
 
     from app.core.database import SessionLocal
@@ -547,7 +557,8 @@ def test_upload_sanitizes_a_traversal_filename(client):
         stored = session.get(Document, resp.json()["id"]).storage_path
 
     basename = Path(stored).name
-    assert basename.endswith("evil.txt")
+    assert re.fullmatch(r"[0-9a-f]{32}\.jse", basename)
+    assert "evil" not in basename
     assert ".." not in basename
     assert "/" not in basename and "\\" not in basename
 

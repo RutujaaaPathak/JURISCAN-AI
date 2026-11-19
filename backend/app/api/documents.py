@@ -40,6 +40,12 @@ from app.services.company import (
     can_manage_company_documents,
     can_upload_company_documents,
 )
+from app.services.document_content import (
+    clause_plaintext,
+    document_dek_if_encrypted,
+    document_plaintext,
+    plaintext_clauses,
+)
 from app.services.processing import delete_all_documents as delete_all_documents_service
 from app.services.processing import delete_document as delete_document_service
 from app.services.processing import process_upload_async
@@ -113,6 +119,8 @@ def _summary_payload(document: Document) -> dict:
         "language": document.language,
         "extracted_at": document.extracted_at,
         "error_message": document.error_message,
+        "legal_hold": document.legal_hold,
+        "retention_until": document.retention_until,
         "created_at": document.created_at,
         "updated_at": document.updated_at,
         "analysis_id": analysis.id if analysis else None,
@@ -176,7 +184,7 @@ def _analysis_payload(analysis: Analysis, clauses_by_id: dict[int, Clause]) -> d
     }
 
 
-def _page_payloads(document: Document) -> list[dict]:
+def _page_payloads(document: Document, text: str | None) -> list[dict]:
     """Return persisted source-page ranges, falling back for legacy documents.
 
     New documents persist every page span, including blank pages. Legacy rows
@@ -184,7 +192,7 @@ def _page_payloads(document: Document) -> list[dict]:
     before. The fallback keeps old documents readable without reprocessing.
     """
 
-    text = document.text_content or ""
+    text = text or ""
     if not text:
         return []
 
@@ -248,16 +256,31 @@ def _legacy_page_payloads(document: Document, text: str) -> list[dict]:
     return pages
 
 
+def _clause_payload(
+    document: Document, clause: Clause, dek: bytes | None
+) -> dict:
+    payload = ClauseRead.model_validate(clause).model_dump()
+    payload["text"] = clause_plaintext(document, clause, dek=dek)
+    payload["normalized_text"] = clause_plaintext(
+        document, clause, dek=dek, normalized=True
+    )
+    return payload
+
+
 def _detail_payload(document: Document) -> dict:
     clauses = sorted(document.clauses, key=lambda clause: clause.clause_number)
     clauses_by_id = {clause.id: clause for clause in clauses}
     analysis = _latest_analysis(document)
+    dek = document_dek_if_encrypted(document)
+    text = document_plaintext(document, dek=dek)
     payload = _summary_payload(document)
-    payload["text_content"] = document.text_content
-    payload["pages"] = _page_payloads(document)
+    payload["text_content"] = text
+    payload["pages"] = _page_payloads(document, text)
     payload["ocr_quality"] = document.ocr_quality
     payload["quality_warnings"] = document.quality_warnings or []
-    payload["clauses"] = [ClauseRead.model_validate(clause).model_dump() for clause in clauses]
+    payload["clauses"] = [
+        _clause_payload(document, clause, dek) for clause in clauses
+    ]
     payload["analysis"] = (
         _analysis_payload(analysis, clauses_by_id) if analysis else None
     )
@@ -361,20 +384,26 @@ def _ensure_can_delete(user, document: Document) -> None:
             "Viewers cannot delete documents.",
             code="insufficient_company_role",
         )
-    if document.user_id == user.id and (
-        document.company_id is None
-        or document.company_id == _company_scope_id(user)
-    ):
-        return
-    if (
-        document.company_id is not None
-        and document.company_id == _company_scope_id(user)
-        and can_manage_company_documents(user)
-    ):
+    company_id = _company_scope_id(user)
+    if document.company_id is not None:
+        # Company records outlive the employee who uploaded them. Only the
+        # company's administrators/managers may delete them, regardless of who
+        # originally uploaded the document.
+        if (
+            document.company_id == company_id
+            and can_manage_company_documents(user)
+        ):
+            return
+        raise ForbiddenError(
+            "Only a company administrator or manager of the document's "
+            "workspace can delete it.",
+            code="document_delete_forbidden",
+            details={"document_id": document.id},
+        )
+    if document.user_id == user.id:
         return
     raise ForbiddenError(
-        "Only the document owner or a company manager of its workspace "
-        "can delete it.",
+        "Only the document owner can delete it.",
         code="document_delete_forbidden",
         details={"document_id": document.id},
     )
@@ -550,7 +579,8 @@ def get_analysis_report(
             details={"document_id": document_id},
         )
     clauses = sorted(document.clauses, key=lambda clause: clause.clause_number)
-    clauses_by_id = {clause.id: clause for clause in clauses}
+    report_clauses = plaintext_clauses(document, clauses)
+    clauses_by_id = {clause.id: clause for clause in report_clauses}
     payload = build_report_pdf(document, analysis, clauses_by_id)
     return Response(
         content=payload,
