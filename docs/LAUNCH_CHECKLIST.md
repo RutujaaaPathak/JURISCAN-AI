@@ -74,8 +74,17 @@ a coordinated champagne-tinted light mode still available from the theme toggle.
 
 - [ ] Set a strong, unique `SECRET_KEY` in the production `.env`
       (`python -c "import secrets; print(secrets.token_urlsafe(48))"`).
+- [ ] Set `DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID` and `DOCUMENT_ENCRYPTION_KEYS`.
+      Generate each 32-byte key with
+      `python -c "import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"`,
+      store it in the deployment secret manager, and back it up separately from
+      the database. Losing the KEK makes encrypted documents unrecoverable.
 - [ ] Set `APP_ENV=production` and `APP_DEBUG=false`.
 - [ ] Point `DATABASE_URL` at the production PostgreSQL instance.
+- [ ] Set `DOCUMENT_RETENTION_DAYS` and any per-company `retention_days`
+      policy. `0` disables automatic expiry; legal holds always block deletion.
+- [ ] Define the administrative workflow for applying `legal_hold` and
+      retention dates (there is no end-user UI for these fields yet).
 - [ ] Set `FRONTEND_ORIGIN` and `CORS_ORIGINS` to the real frontend origin(s).
 - [ ] Set the frontend `VITE_API_BASE_URL` to the deployed API URL and rebuild
       (it is compiled into the bundle).

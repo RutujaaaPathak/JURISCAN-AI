@@ -50,7 +50,7 @@ class User(Base, TimestampMixin):
     company_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     documents: Mapped[list["Document"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
+        back_populates="user", passive_deletes=True
     )
     company: Mapped["Company | None"] = relationship(
         back_populates="members", foreign_keys=[company_id]

@@ -21,6 +21,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -38,6 +39,14 @@ from app.core.logging import logger
 from app.models import Analysis, Clause, Document, RiskFinding, User
 from app.services.analysis import MODEL_NAME, analyze_segments
 from app.services.clause_quality import assess_clause_quality
+from app.services.document_content import (
+    assign_document_key,
+    document_plaintext,
+    encrypt_clause_text,
+    encrypt_document_text,
+    ensure_document_key,
+)
+from app.services.document_crypto import DocumentEncryptionError
 from app.services.extraction import (
     page_number_for_offset,
     page_span_payloads,
@@ -46,6 +55,11 @@ from app.services.extraction import (
     validate_and_extract,
 )
 from app.services.legal_normalization import normalize_segments
+from app.services.retention import (
+    ensure_document_deletable,
+    ensure_documents_deletable,
+    retention_until_for_upload,
+)
 from app.services.segmentation import segment_clauses
 from app.services.storage import (
     compute_content_hash,
@@ -145,8 +159,14 @@ def _prepare_retry(
     content_type: str | None,
     file_type: str,
 ) -> None:
-    """Reset a failed document so the same row can be processed again."""
+    """Reset a failed document so the same row can be processed again.
 
+    A fresh DEK is attached to every retry. Existing clause rows are
+    re-encrypted under that new key before the PROCESSING row is committed, so
+    clause ids and finding references survive while no stale ciphertext remains.
+    """
+
+    assign_document_key(db, document, reencrypt_existing=True)
     delete_upload(document.storage_path)
     _clear_results(db, document, keep_clauses=True)
     document.title = title
@@ -169,9 +189,11 @@ def delete_document(db: Session, document: Document) -> None:
     Findings, analyses and clauses are removed explicitly (SQLite does not
     enforce ``ON DELETE CASCADE`` by default), then the row itself is deleted.
     The stored file is only removed when it lives inside the managed upload
-    directory.
+    directory. Legal holds and active retention periods are checked first so a
+    protected document is never partially deleted.
     """
 
+    ensure_document_deletable(document)
     storage_path = document.storage_path
     _clear_results(db, document, keep_clauses=False)
     db.delete(document)
@@ -200,6 +222,10 @@ def delete_all_documents(
     documents = list(db.scalars(stmt).all())
     if not documents:
         return 0
+
+    # Validate the whole scope before deleting anything. One protected document
+    # aborts the bulk operation so the client cannot accidentally bypass a hold.
+    ensure_documents_deletable(documents)
 
     storage_paths = [
         document.storage_path for document in documents if document.storage_path
@@ -298,6 +324,7 @@ def persist_clauses(
     pages: list,
     result: Any,
     clause_qualities: list[dict] | None = None,
+    dek: bytes | None = None,
 ) -> list[Clause]:
     """Persist segmented clauses for ``document``, updating existing rows by
     clause_number to reuse IDs, preserve risk-finding references, prevent duplicate
@@ -331,11 +358,30 @@ def persist_clauses(
             else None
         )
 
+        stored_text = segment.text
+        stored_normalized_text = normalized_text
+        if document.encryption_version == 1:
+            if dek is None:
+                raise DocumentEncryptionError(
+                    "Document encryption key is unavailable."
+                )
+            stored_text = encrypt_clause_text(
+                segment.text, dek, document.id, segment.number, "text"
+            )
+            if normalized_text is not None:
+                stored_normalized_text = encrypt_clause_text(
+                    normalized_text,
+                    dek,
+                    document.id,
+                    segment.number,
+                    "normalized_text",
+                )
+
         if segment.number in existing_by_number:
             clause = existing_by_number[segment.number]
             clause.heading = segment.heading
-            clause.text = segment.text
-            clause.normalized_text = normalized_text
+            clause.text = stored_text
+            clause.normalized_text = stored_normalized_text
             clause.normalization_changes = normalization_changes or None
             if clause_qualities is not None:
                 clause.ocr_quality = quality
@@ -353,8 +399,8 @@ def persist_clauses(
                 document_id=document.id,
                 clause_number=segment.number,
                 heading=segment.heading,
-                text=segment.text,
-                normalized_text=normalized_text,
+                text=stored_text,
+                normalized_text=stored_normalized_text,
                 normalization_changes=normalization_changes or None,
                 ocr_quality=quality,
                 start_offset=segment.start_offset,
@@ -401,10 +447,11 @@ def sync_legacy_clause_hierarchy(
     """Backfill hierarchy metadata (label, level, parent_id, offsets) for legacy
     clauses in ``document`` using deterministic segmentation."""
 
-    if not document.text_content:
+    text = document_plaintext(document)
+    if not text:
         return list(document.clauses)
 
-    segments = segment_clauses(document.text_content)
+    segments = segment_clauses(text)
     if not segments:
         return list(document.clauses)
 
@@ -452,6 +499,7 @@ def run_processing(
     document_id = document.id
     stored_path: str | None = None
     try:
+        dek = ensure_document_key(db, document)
         extracted = validate_and_extract(
             data, filename, content_type, max_size_bytes
         )
@@ -487,14 +535,23 @@ def run_processing(
         # so, abort rather than overwrite the terminal FAILED state.
         _ensure_processing_active(db, document_id)
 
-        stored_path = save_upload(data, filename)
+        content_hash = document.content_hash or compute_content_hash(data)
+        document.content_hash = content_hash
+        stored_path = save_upload(
+            data,
+            dek=dek,
+            document_id=document_id,
+            content_hash=content_hash,
+        )
         document.storage_path = stored_path
         document.file_type = extracted.file_type
         document.mime_type = content_type
         document.page_count = extracted.page_count
         document.word_count = extracted.word_count
         document.language = extracted.language
-        document.text_content = extracted.text
+        document.text_content = encrypt_document_text(
+            extracted.text, dek, document_id
+        )
         document.page_spans = page_span_payloads(extracted.pages)
         document.ocr_quality = quality_payload(extracted.ocr_quality)
         document.quality_warnings = extracted.quality_warnings or None
@@ -509,6 +566,7 @@ def run_processing(
             extracted.pages,
             result,
             clause_qualities=clause_qualities,
+            dek=dek,
         )
 
         now = extracted.extracted_at
@@ -637,6 +695,7 @@ def process_upload(
             )
         )
 
+    created = False
     if existing is not None:
         completed = _latest_completed_analysis(existing)
         if existing.status == "PROCESSING":
@@ -666,10 +725,21 @@ def process_upload(
             mime_type=content_type,
             content_hash=content_hash,
             status="PROCESSING",
+            retention_until=retention_until_for_upload(
+                db, company_id=company_id
+            ),
         )
         db.add(document)
+        created = True
 
     try:
+        if created:
+            # The DEK's wrapped AEAD binds the row id, so the insert must be
+            # flushed before the key can be assigned. Keep this inside the
+            # IntegrityError guard: two identical uploads can race here and one
+            # must still surface as a duplicate conflict, not a 500.
+            db.flush()
+            assign_document_key(db, document)
         db.commit()
     except IntegrityError as exc:
         # Two identical uploads can race between the SELECT above and INSERT

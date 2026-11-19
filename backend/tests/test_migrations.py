@@ -449,3 +449,153 @@ def test_quality_intelligence_migration_upgrade_and_downgrade(migration_db):
         col["name"] for col in inspector.get_columns("risk_findings")
     }
     engine.dispose()
+
+
+def test_document_encryption_metadata_migration_upgrade_and_downgrade(migration_db):
+    cfg, db_url = migration_db
+
+    command.upgrade(cfg, "f5a6b7c8d9e0")
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, username, is_active) "
+                "VALUES (1, 'encrypt@example.com', 'encrypt', 1)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO documents (id, user_id, title, filename, file_type, status) "
+                "VALUES (1, 1, 'Legacy Doc', 'legacy.txt', 'txt', 'PROCESSED')"
+            )
+        )
+    engine.dispose()
+
+    command.upgrade(cfg, "head")
+    engine = create_engine(db_url)
+    columns = {
+        col["name"]: col for col in inspect(engine).get_columns("documents")
+    }
+    assert columns["encryption_version"]["nullable"] is False
+    assert columns["encryption_key_id"]["nullable"] is True
+    assert columns["dek_wrapped"]["nullable"] is True
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT encryption_version, encryption_key_id, dek_wrapped "
+                "FROM documents WHERE id = 1"
+            )
+        ).mappings().one()
+    engine.dispose()
+    assert row["encryption_version"] == 0
+    assert row["encryption_key_id"] is None
+    assert row["dek_wrapped"] is None
+
+    command.downgrade(cfg, "f5a6b7c8d9e0")
+    engine = create_engine(db_url)
+    columns_down = {
+        col["name"] for col in inspect(engine).get_columns("documents")
+    }
+    assert "encryption_version" not in columns_down
+    assert "encryption_key_id" not in columns_down
+    assert "dek_wrapped" not in columns_down
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM documents")).scalar() == 1
+    engine.dispose()
+
+    command.upgrade(cfg, "head")
+    engine = create_engine(db_url)
+    columns_up = {col["name"] for col in inspect(engine).get_columns("documents")}
+    engine.dispose()
+    assert {"encryption_version", "encryption_key_id", "dek_wrapped"} <= columns_up
+
+def test_document_ownership_retention_migration(migration_db):
+    cfg, db_url = migration_db
+
+    command.upgrade(cfg, "head")
+
+    engine = create_engine(db_url)
+    document_columns = {
+        col["name"]: col for col in inspect(engine).get_columns("documents")
+    }
+    company_columns = {
+        col["name"]: col for col in inspect(engine).get_columns("companies")
+    }
+    assert document_columns["user_id"]["nullable"] is True
+    assert document_columns["legal_hold"]["nullable"] is False
+    assert "retention_until" in document_columns
+    assert "retention_days" in company_columns
+
+    foreign_keys = {
+        fk["constrained_columns"][0]: fk
+        for fk in inspect(engine).get_foreign_keys("documents")
+    }
+    assert foreign_keys["user_id"]["options"].get("ondelete") == "SET NULL"
+    assert foreign_keys["company_id"]["options"].get("ondelete") == "RESTRICT"
+
+    checks = {
+        check["name"]: check
+        for check in inspect(engine).get_check_constraints("documents")
+    }
+    assert "ck_documents_owner_present" in checks
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO users (id, email, username, is_active) "
+                "VALUES (1, 'owner@example.com', 'owner', 1)"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO companies (id, name) VALUES (1, 'Retention Co')")
+        )
+        conn.execute(
+            text(
+                "INSERT INTO documents "
+                "(id, user_id, company_id, title, filename, file_type, status) "
+                "VALUES (1, NULL, 1, 'Company Doc', 'company.txt', 'txt', 'PROCESSED')"
+            )
+        )
+
+    with pytest.raises(IntegrityError):
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO documents "
+                    "(id, user_id, company_id, title, filename, file_type, status) "
+                    "VALUES (2, NULL, NULL, 'Orphan', 'orphan.txt', 'txt', 'PROCESSED')"
+                )
+            )
+
+    engine.dispose()
+
+    # Downgrade cannot represent company-owned rows without an uploader.
+    with pytest.raises(RuntimeError, match="Cannot downgrade"):
+        command.downgrade(cfg, "d4e5f6a7b8c9")
+
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE documents SET user_id = 1 WHERE id = 1"))
+    engine.dispose()
+
+    command.downgrade(cfg, "d4e5f6a7b8c9")
+
+    engine = create_engine(db_url)
+    downgraded_columns = {
+        col["name"] for col in inspect(engine).get_columns("documents")
+    }
+    assert "legal_hold" not in downgraded_columns
+    assert "retention_until" not in downgraded_columns
+    assert "retention_days" not in {
+        col["name"] for col in inspect(engine).get_columns("companies")
+    }
+    downgraded_fks = {
+        fk["constrained_columns"][0]: fk
+        for fk in inspect(engine).get_foreign_keys("documents")
+    }
+    assert downgraded_fks["user_id"]["options"].get("ondelete") == "CASCADE"
+    assert downgraded_fks["company_id"]["options"].get("ondelete") == "SET NULL"
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM documents")).scalar() == 1
+    engine.dispose()

@@ -42,7 +42,7 @@ def test_user_crud():
         assert db.get(User, user.id) is None
 
 
-def test_document_relationship_cascade():
+def test_document_relationship_does_not_cascade_into_orphans():
     with Session(engine) as db:
         user = User(email="author@example.com", username="author")
         db.add(user)
@@ -60,9 +60,21 @@ def test_document_relationship_cascade():
         assert len(user.documents) == 1
         assert user.documents[0].title == "NDA Agreement"
 
-        # Cascade delete
-        db.delete(user)
+        # Deleting an account must not cascade into its personal documents and
+        # leave no owner. Account deletion must dispose of personal documents
+        # through the application workflow instead.
+        with pytest.raises(IntegrityError):
+            db.delete(user)
+            db.commit()
+        db.rollback()
+        assert db.get(Document, doc.id) is not None
+
+        # Explicit disposal of the personal document then allows deletion.
+        db.delete(db.get(Document, doc.id))
         db.commit()
+        db.delete(db.get(User, user.id))
+        db.commit()
+        assert db.get(User, user.id) is None
         assert db.get(Document, doc.id) is None
 
 

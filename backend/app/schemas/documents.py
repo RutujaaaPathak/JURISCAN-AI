@@ -6,7 +6,7 @@ from app.schemas.common import ORMModel, Timestamped
 
 
 class DocumentCreate(ORMModel):
-    user_id: int
+    user_id: int | None = None
     title: str = Field(min_length=1, max_length=255)
     filename: str = Field(min_length=1, max_length=255)
     file_type: str = Field(min_length=1, max_length=16)
@@ -16,12 +16,13 @@ class DocumentCreate(ORMModel):
 class DocumentRead(DocumentCreate, Timestamped):
     id: int
     status: str
-    storage_path: str | None = None
     content_hash: str | None = None
     page_count: int | None = None
     word_count: int | None = None
     language: str | None = None
     extracted_at: datetime | None = None
+    legal_hold: bool = False
+    retention_until: datetime | None = None
 
 
 class DocumentStatusUpdate(ORMModel):
@@ -94,6 +95,8 @@ class DocumentSummary(ORMModel):
     language: str | None = None
     extracted_at: datetime | None = None
     error_message: str | None = None
+    legal_hold: bool = False
+    retention_until: datetime | None = None
     created_at: datetime
     updated_at: datetime
     analysis_id: int | None = None

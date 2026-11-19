@@ -15,6 +15,7 @@ InvitationStatus = Literal["PENDING", "ACCEPTED", "REVOKED", "EXPIRED"]
 class CompanyProfile(BaseModel):
     id: int
     name: str
+    retention_days: int | None = None
 
 
 class TeamMemberRead(BaseModel):
@@ -107,6 +108,8 @@ class AuditReportSummary(BaseModel):
     finding_count: int = 0
     high_risk_count: int = 0
     error_message: str | None = None
+    legal_hold: bool = False
+    retention_until: datetime | None = None
 
 
 class AuditReportListResponse(BaseModel):

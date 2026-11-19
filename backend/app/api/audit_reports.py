@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import CompanyUser, DbSession
 from app.core.exceptions import NotFoundError, ValidationFailed
-from app.models import Analysis, Clause, Document
+from app.models import Analysis, Document
 from app.schemas.company import (
     AuditActivity,
     AuditReportDetail,
@@ -26,6 +26,7 @@ from app.schemas.company import (
     AuditReportSummary,
 )
 from app.services.audit import detail_payload, latest_analysis, summary_payload
+from app.services.document_content import plaintext_clauses
 from app.services.report import build_report_pdf
 
 router = APIRouter(prefix="/company/audit-reports", tags=["company-audit-reports"])
@@ -253,7 +254,8 @@ def download_audit_report(
             details={"document_id": document_id},
         )
     clauses = sorted(document.clauses, key=lambda clause: clause.clause_number)
-    clauses_by_id: dict[int, Clause] = {clause.id: clause for clause in clauses}
+    report_clauses = plaintext_clauses(document, clauses)
+    clauses_by_id = {clause.id: clause for clause in report_clauses}
     payload = build_report_pdf(document, analysis, clauses_by_id)
     return Response(
         content=payload,

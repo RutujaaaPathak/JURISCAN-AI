@@ -9,7 +9,7 @@ persisted or logged.
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -24,6 +24,8 @@ class Company(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Null inherits the system default; zero means no automatic retention.
+    retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     members: Mapped[list["User"]] = relationship(
         back_populates="company",
@@ -32,6 +34,7 @@ class Company(Base, TimestampMixin):
     documents: Mapped[list["Document"]] = relationship(
         back_populates="company",
         foreign_keys="Document.company_id",
+        passive_deletes=True,
     )
     invitations: Mapped[list["CompanyInvitation"]] = relationship(
         back_populates="company",

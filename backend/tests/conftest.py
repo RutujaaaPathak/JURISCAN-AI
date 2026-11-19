@@ -1,4 +1,6 @@
+import base64
 import os
+import secrets
 import shutil
 from pathlib import Path
 
@@ -8,6 +10,9 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
 os.environ["APP_ENV"] = "test"
 os.environ["ALLOW_DEMO_USER"] = "true"
 os.environ["SECRET_KEY"] = "test-only-secret-key-that-is-long-enough-1234567890"
+os.environ["DOCUMENT_ENCRYPTION_ACTIVE_KEY_ID"] = "v1"
+_TEST_DOCUMENT_KEY = base64.b64encode(secrets.token_bytes(32)).decode("ascii")
+os.environ["DOCUMENT_ENCRYPTION_KEYS"] = f'{{"v1":"{_TEST_DOCUMENT_KEY}"}}'
 # The whole suite shares one TestClient (one source IP). Disable the auth and
 # invitation rate limiters globally; tests/test_rate_limit.py re-enables them.
 os.environ["AUTH_RATE_LIMIT_MAX_REQUESTS"] = "0"

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.logging import logger
+from app.services.document_crypto import DocumentEncryptionError
 
 
 class AppError(Exception):
@@ -117,6 +118,19 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=_error_body("http_error", content),
+        )
+
+    @app.exception_handler(DocumentEncryptionError)
+    async def document_encryption_error_handler(
+        request: Request, exc: DocumentEncryptionError
+    ) -> JSONResponse:
+        logger.warning("Document decryption failed on %s", request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content=_error_body(
+                "document_decryption_failed",
+                "Document content could not be decrypted.",
+            ),
         )
 
     @app.exception_handler(Exception)

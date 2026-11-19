@@ -7,6 +7,7 @@ from app.models import Analysis, Clause, Document, User
 from app.services import processing as processing_module
 from app.services.analysis import analyze_segments
 from app.services.clause_quality import assess_clause_quality
+from app.services.document_content import clause_plaintext, plaintext_clauses
 from app.services.extraction import ExtractedDocument, PageSpan
 from app.services.legal_normalization import normalize_legal_text, normalize_segment
 from app.services.ocr_layout import OcrLineSpan
@@ -176,8 +177,10 @@ def test_processing_persists_quality_and_review_metadata(monkeypatch):
         clauses = session.query(Clause).order_by(Clause.clause_number).all()
         analysis = session.query(Analysis).one()
 
-        assert clauses[0].text.startswith("1. Indemnity")
-        assert "indemnify" in (clauses[0].normalized_text or "")
+        assert clause_plaintext(document, clauses[0]).startswith("1. Indemnity")
+        assert "indemnify" in (
+            clause_plaintext(document, clauses[0], normalized=True) or ""
+        )
         assert clauses[0].normalization_changes
         assert clauses[0].ocr_quality["requires_verification"] is True
 
@@ -249,7 +252,10 @@ def test_report_contains_quality_and_manual_review_sections(monkeypatch):
         )
 
         analysis = session.query(Analysis).one()
-        clauses_by_id = {clause.id: clause for clause in document.clauses}
+        clauses_by_id = {
+            clause.id: clause
+            for clause in plaintext_clauses(document, list(document.clauses))
+        }
         pdf = build_report_pdf(document, analysis, clauses_by_id)
 
     assert pdf.startswith(b"%PDF")

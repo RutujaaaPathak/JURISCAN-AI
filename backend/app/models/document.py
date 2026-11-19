@@ -1,6 +1,18 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -13,13 +25,17 @@ class Document(Base, TimestampMixin):
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    # Personal documents keep their uploader as owner. Company documents
+    # outlive the employee who uploaded them, so deleting an account nulls this
+    # reference instead of deleting the company's records.
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
     )
     # Documents uploaded inside a company workspace belong to that company and
-    # are readable by its members. Null for personal/lawyer documents.
+    # are readable by its members. Null for personal/lawyer documents. Company
+    # documents cannot be silently detached by deleting the company.
     company_id: Mapped[int | None] = mapped_column(
-        ForeignKey("companies.id", ondelete="SET NULL"),
+        ForeignKey("companies.id", ondelete="RESTRICT"),
         index=True,
         nullable=True,
     )
@@ -31,6 +47,12 @@ class Document(Base, TimestampMixin):
     content_hash: Mapped[str | None] = mapped_column(
         String(64), index=True, nullable=True
     )
+    # 0 is the explicit legacy plaintext marker; 1 requires the wrapped DEK.
+    encryption_version: Mapped[int] = mapped_column(
+        SmallInteger, default=0, server_default=text("0"), nullable=False
+    )
+    encryption_key_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    dek_wrapped: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         String(16), default="PENDING", nullable=False
     )
@@ -45,8 +67,16 @@ class Document(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Retention controls are explicit deletion guards. A legal hold always wins;
+    # retention_until blocks deletion until the configured date has passed.
+    legal_hold: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0"), nullable=False
+    )
+    retention_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
-    user: Mapped["User"] = relationship(back_populates="documents")
+    user: Mapped["User | None"] = relationship(back_populates="documents")
     company: Mapped["Company | None"] = relationship(
         back_populates="documents", foreign_keys=[company_id]
     )
@@ -65,6 +95,10 @@ class Document(Base, TimestampMixin):
         CheckConstraint(
             "file_type IN ('pdf', 'docx', 'txt', 'other')",
             name="ck_documents_file_type",
+        ),
+        CheckConstraint(
+            "user_id IS NOT NULL OR company_id IS NOT NULL",
+            name="ck_documents_owner_present",
         ),
         Index(
             "ix_documents_company_content_hash",
