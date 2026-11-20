@@ -74,6 +74,7 @@ jobs:
   backend-tests:
     name: Backend tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     defaults:
       run:
@@ -95,7 +96,8 @@ jobs:
 
       - name: Run backend tests
         # conftest.py points DATABASE_URL at a throwaway SQLite file, so these
-        # tests never touch a real database.
+        # tests never touch a real database. pytest-timeout uses SIGALRM here,
+        # so a stall is reported as a normal failure with the test and traceback.
         run: python -m pytest
 
   frontend:
