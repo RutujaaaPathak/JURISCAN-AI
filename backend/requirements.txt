@@ -10,6 +10,8 @@ psycopg[binary]==3.2.*
 httpx==0.28.*
 email-validator==2.3.*
 pytest==8.*
+# Diagnostic safeguard: aborts a stalled test with its name and stack dump.
+pytest-timeout==2.*
 pypdf==5.*
 python-docx==1.1.*
 python-multipart==0.0.*
